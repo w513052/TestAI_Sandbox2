@@ -1,0 +1,481 @@
+Firewall Policy Optimization Tool - API Specification
+1. API Architecture Overview
+Authentication/Authorization Strategy
+
+No authentication required for the MVP, as the tool operates locally via an Electron app with no external connectivity.
+All API endpoints are accessible only through the localhost loopback (127.0.0.1).
+Future consideration: If user accounts are added, implement local session-based authentication using bcrypt for password hashing and JWT tokens stored in Electron's secure storage.
+
+Request/Response Format Standards
+
+Request Format: JSON for all POST/PUT requests, with form-data for file uploads.
+Response Format: JSON with a consistent structure:{
+  "status": "success" | "error",
+  "data": { /* response data */ },
+  "message": "Optional human-readable message",
+  "error_code": "Optional error code (if status is error)"
+}
+
+
+Content-Type: application/json for all responses, except file downloads (e.g., application/pdf, text/csv).
+HTTP Methods: Follow REST conventions (GET, POST, DELETE, etc.).
+Versioning: API endpoints are prefixed with /api/v1/ to support future extensibility.
+
+Error Handling Approach
+
+Standardized Error Responses:{
+  "status": "error",
+  "message": "Detailed error message",
+  "error_code": "SPECIFIC_ERROR_CODE",
+  "data": null
+}
+
+
+HTTP Status Codes:
+200 OK: Successful request.
+201 Created: Resource created (e.g., audit session).
+400 Bad Request: Invalid input or validation failure.
+404 Not Found: Resource not found.
+500 Internal Server Error: Unexpected server error.
+
+
+Error Codes: Unique codes (e.g., INVALID_CONFIG_FILE, SESSION_NOT_FOUND) for client-side handling.
+
+Rate Limiting Strategy
+
+No rate limiting in the MVP, as the tool is local and single-user.
+Future consideration: If multi-user support is added, implement rate limiting using FastAPI middleware (e.g., fastapi-limiter with Redis or in-memory storage) to prevent abuse.
+
+
+2. Complete Endpoint Documentation
+Endpoints are organized by feature area: Audit Management, Rule Analysis, Object Analysis, Recommendations, and Reporting.
+Audit Management
+POST /api/v1/audits
+
+Purpose: Start a new audit session by uploading a Palo Alto configuration file.
+Description: Parses the uploaded XML or set-format config file, stores metadata in the AuditSession table, and triggers rule and object analysis.
+Request Parameters:
+Body (multipart/form-data):
+file: Palo Alto config file (XML or set format).
+session_name: Optional string for labeling the session.
+
+
+
+
+Request Example:POST /api/v1/audits HTTP/1.1
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary
+Host: localhost:8000
+
+------WebKitFormBoundary
+Content-Disposition: form-data; name="file"; filename="config.xml"
+Content-Type: application/xml
+
+<config>...</config>
+------WebKitFormBoundary
+Content-Disposition: form-data; name="session_name"
+
+July 2025 Audit
+------WebKitFormBoundary--
+
+
+Response Format:
+200 OK: Audit session created and analysis started.
+400 Bad Request: Invalid file format or parsing error.
+500 Internal Server Error: Analysis failure.
+
+
+Response Example:{
+  "status": "success",
+  "data": {
+    "audit_id": 1,
+    "session_name": "July 2025 Audit",
+    "start_time": "2025-07-11T14:00:00Z",
+    "filename": "config.xml",
+    "file_hash": "abc123...",
+    "metadata": { "firmware": "10.2", "rule_count": 87 }
+  },
+  "message": "Audit session created successfully"
+}
+
+
+Authentication Requirements: None (local access only).
+
+GET /api/v1/audits
+
+Purpose: List all audit sessions.
+Description: Retrieves metadata for all audit sessions stored in the database.
+Request Parameters:
+Query:
+limit: Optional integer (default: 50).
+offset: Optional integer (default: 0).
+
+
+
+
+Request Example:GET /api/v1/audits?limit=10&offset=0 HTTP/1.1
+Host: localhost:8000
+
+
+Response Format:
+200 OK: List of audit sessions.
+500 Internal Server Error: Database error.
+
+
+Response Example:{
+  "status": "success",
+  "data": [
+    {
+      "audit_id": 1,
+      "session_name": "July 2025 Audit",
+      "start_time": "2025-07-11T14:00:00Z",
+      "end_time": "2025-07-11T14:02:12Z",
+      "filename": "config.xml",
+      "file_hash": "abc123..."
+    }
+  ],
+  "message": "Audit sessions retrieved"
+}
+
+
+Authentication Requirements: None.
+
+GET /api/v1/audits/{audit_id}
+
+Purpose: Retrieve details of a specific audit session.
+Description: Returns metadata, rules, objects, issues, and recommendations for a given audit session.
+Request Parameters:
+Path:
+audit_id: Integer, ID of the audit session.
+
+
+Query:
+include_rules: Boolean (default: false).
+include_objects: Boolean (default: false).
+include_issues: Boolean (default: false).
+include_recommendations: Boolean (default: false).
+
+
+
+
+Request Example:GET /api/v1/audits/1?include_rules=true&include_issues=true HTTP/1.1
+Host: localhost:8000
+
+
+Response Format:
+200 OK: Audit session details.
+404 Not Found: Audit session not found.
+
+
+Response Example:{
+  "status": "success",
+  "data": {
+    "audit_id": 1,
+    "session_name": "July 2025 Audit",
+    "start_time": "2025-07-11T14:00:00Z",
+    "end_time": "2025-07-11T14:02:12Z",
+    "filename": "config.xml",
+    "file_hash": "abc123...",
+    "rules": [
+      {
+        "id": 101,
+        "rule_name": "Allow-Web-Traffic",
+        "rule_type": "security",
+        "src_zone": "trust",
+        "dst_zone": "untrust",
+        "src": "192.168.1.0/24",
+        "dst": "any",
+        "service": "web-browsing",
+        "action": "allow",
+        "position": 5,
+        "is_disabled": false
+      }
+    ],
+    "issues": [
+      {
+        "id": 1,
+        "rule_id": 101,
+        "issue_type": "shadowed",
+        "description": "This rule is shadowed by rule #3 with broader match",
+        "severity": "medium"
+      }
+    ]
+  },
+  "message": "Audit session details retrieved"
+}
+
+
+Authentication Requirements: None.
+
+Rule Analysis
+GET /api/v1/audits/{audit_id}/rules
+
+Purpose: Retrieve all firewall rules for an audit session.
+Description: Returns a paginated list of rules with optional filtering by issue type or severity.
+Request Parameters:
+Path:
+audit_id: Integer, ID of the audit session.
+
+
+Query:
+issue_type: Optional string (e.g., shadowed, duplicate, unused).
+severity: Optional string (e.g., low, medium, high).
+limit: Optional integer (default: 50).
+offset: Optional integer (default: 0).
+
+
+
+
+Request Example:GET /api/v1/audits/1/rules?issue_type=shadowed&limit=10 HTTP/1.1
+Host: localhost:8000
+
+
+Response Format:
+200 OK: List of rules with associated issues.
+404 Not Found: Audit session not found.
+
+
+Response Example:{
+  "status": "success",
+  "data": [
+    {
+      "id": 101,
+      "rule_name": "Allow-Web-Traffic",
+      "rule_type": "security",
+      "src_zone": "trust",
+      "dst_zone": "untrust",
+      "src": "192.168.1.0/24",
+      "dst": "any",
+      "service": "web-browsing",
+      "action": "allow",
+      "position": 5,
+      "is_disabled": false,
+      "issues": [
+        {
+          "id": 1,
+          "issue_type": "shadowed",
+          "description": "This rule is shadowed by rule #3 with broader match",
+          "severity": "medium"
+        }
+      ]
+    }
+  ],
+  "message": "Rules retrieved"
+}
+
+
+Authentication Requirements: None.
+
+Object Analysis
+GET /api/v1/audits/{audit_id}/objects
+
+Purpose: Retrieve all object definitions for an audit session.
+Description: Returns a paginated list of address/service objects with optional filtering by issue type.
+Request Parameters:
+Path:
+audit_id: Integer, ID of the audit session.
+
+
+Query:
+object_type: Optional string (e.g., address, service, group).
+issue_type: Optional string (e.g., unused, duplicate).
+limit: Optional integer (default: 50).
+offset: Optional integer (default: 0).
+
+
+
+
+Request Example:GET /api/v1/audits/1/objects?issue_type=unused&limit=10 HTTP/1.1
+Host: localhost:8000
+
+
+Response Format:
+200 OK: List of objects with associated issues.
+404 Not Found: Audit session not found.
+
+
+Response Example:{
+  "status": "success",
+  "data": [
+    {
+      "id": 201,
+      "object_type": "address",
+      "name": "DMZ-Server",
+      "value": "192.168.2.10",
+      "used_in_rules": 0,
+      "issues": [
+        {
+          "id": 2,
+          "issue_type": "unused",
+          "description": "Address object not referenced in any rules",
+          "severity": "low"
+        }
+      ]
+    }
+  ],
+  "message": "Objects retrieved"
+}
+
+
+Authentication Requirements: None.
+
+Recommendations
+GET /api/v1/audits/{audit_id}/recommendations
+
+Purpose: Retrieve all recommendations for an audit session.
+Description: Returns a paginated list of recommendations linked to rules or objects.
+Request Parameters:
+Path:
+audit_id: Integer, ID of the audit session.
+
+
+Query:
+category: Optional string (e.g., Cleanup, Merge, Reorder).
+limit: Optional integer (default: 50).
+offset: Optional integer (default: 0).
+
+
+
+
+Request Example:GET /api/v1/audits/1/recommendations?category=Cleanup&limit=10 HTTP/1.1
+Host: localhost:8000
+
+
+Response Format:
+200 OK: List of recommendations.
+404 Not Found: Audit session not found.
+
+
+Response Example:{
+  "status": "success",
+  "data": [
+    {
+      "id": 1,
+      "linked_rule_id": 101,
+      "linked_object_id": null,
+      "recommendation": "Consider removing or reordering this rule due to shadowing.",
+      "category": "Reorder"
+    }
+  ],
+  "message": "Recommendations retrieved"
+}
+
+
+Authentication Requirements: None.
+
+Reporting
+POST /api/v1/audits/{audit_id}/reports
+
+Purpose: Generate and download a report for an audit session.
+Description: Creates a PDF, CSV, or JSON report based on the audit session’s rules, objects, issues, and recommendations.
+Request Parameters:
+Path:
+audit_id: Integer, ID of the audit session.
+
+
+Body (application/json):
+format: String (pdf, csv, json).
+include_rules: Boolean (default: true).
+include_objects: Boolean (default: true).
+include_issues: Boolean (default: true).
+include_recommendations: Boolean (default: true).
+
+
+
+
+Request Example:POST /api/v1/audits/1/reports HTTP/1.1
+Content-Type: application/json
+Host: localhost:8000
+
+{
+  "format": "pdf",
+  "include_rules": true,
+  "include_objects": true,
+  "include_issues": true,
+  "include_recommendations": true
+}
+
+
+Response Format:
+201 Created: Report generated and available for download.
+400 Bad Request: Invalid format or parameters.
+404 Not Found: Audit session not found.
+500 Internal Server Error: Report generation failure.
+
+
+Response Example:
+For PDF/CSV: Returns a file download with appropriate Content-Type (application/pdf, text/csv).
+For JSON:{
+  "status": "success",
+  "data": {
+    "report_id": 1,
+    "format": "json",
+    "filepath": "/path/to/report.json",
+    "generated_at": "2025-07-11T14:05:00Z"
+  },
+  "message": "Report generated successfully"
+}
+
+
+
+
+Authentication Requirements: None.
+
+
+3. Data Models
+JSON Schemas
+AuditSession
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "audit_id": { "type": "integer", "minimum": 1 },
+    "session_name": { "type": "string", "maxLength": 255 },
+    "start_time": { "type": "string", "format": "date-time" },
+    "end_time": { "type": "string", "format": "date-time", "nullable": true },
+    "filename": { "type": "string", "maxLength": 255 },
+    "file_hash": { "type": "string", "maxLength": 64 },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "firmware": { "type": "string" },
+        "rule_count": { "type": "integer" }
+      }
+    }
+  },
+  "required": ["audit_id", "filename", "file_hash", "start_time"]
+}
+
+FirewallRule
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "id": { "type": "integer", "minimum": 1 },
+    "audit_id": { "type": "integer", "minimum": 1 },
+    "rule_name": { "type": "string", "maxLength": 255 },
+    "rule_type": { "type": "string", "enum": ["security", "nat", "qos", "other"] },
+    "src_zone": { "type": "string", "maxLength": 255 },
+    "dst_zone": { "type": "string", "maxLength": 255 },
+    "src": { "type": "string", "maxLength": 255 },
+    "dst": { "type": "string", "maxLength": 255 },
+    "service": { "type": "string", "maxLength": 255 },
+    "action": { "type": "string", "enum": ["allow", "deny", "drop"] },
+    "position": { "type": "integer", "minimum": 1 },
+    "is_disabled": { "type": "boolean" },
+    "raw_xml": { "type": "string", "nullable": true }
+  },
+  "required": ["id", "audit_id", "rule_name", "rule_type", "position"]
+}
+
+RuleIssue
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "id": { "type": "integer", "minimum": 1 },
+    "rule_id": { "type": "integer", "minimum": 1 },
+    "issue_type": { "type": "string", "enum": ["shadowed", "duplicate", "unused"] },
+    "description": { "type": "string", "maxLength": 1000 },
+    "severity": { "type": "string", "enum": ["low", "medium", "high"] }
+  },
+  "required": ["id", "rule_id", "issue

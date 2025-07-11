@@ -1,0 +1,936 @@
+# Firewall Policy Optimization Tool - Backend Development Guide
+
+This guide provides a comprehensive, step-by-step roadmap for building the backend of the Firewall Policy Optimization Tool using Python, FastAPI, and SQLite. It aligns with the provided project documentation (TechStackDoc.txt, ProjectBriefDoc.txt, AIDesign.txt, PRD.txt, DBSchema.txt, Frontend.txt) and focuses on creating a robust, privacy-first backend for a desktop application tailored to cybersecurity professionals managing Palo Alto firewall configurations.
+
+---
+
+## 1. Project Setup & Environment
+
+### 1.1 Step-by-Step Setup Instructions
+
+The backend uses Python with FastAPI for the API layer and SQLite for data storage, ensuring a lightweight, local-only setup compatible with the Electron frontend.
+
+#### Steps to Set Up:
+1. **Install Python**:
+   - Install Python 3.10 or later (recommended for FastAPI compatibility).
+   - Verify installation: `python --version`.
+
+2. **Create Project Directory**:
+   ```bash
+   mkdir firewall-opt-tool-backend
+   cd firewall-opt-tool-backend
+   ```
+
+3. **Set Up Virtual Environment**:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+4. **Initialize Project with FastAPI**:
+   ```bash
+   pip install fastapi uvicorn sqlalchemy alembic python-multipart
+   ```
+
+5. **Install Additional Dependencies**:
+   - Install dependencies for XML parsing, report generation, and logging.
+   ```bash
+   pip install lxml reportlab pandas
+   ```
+
+6. **Create Initial Project Structure**:
+   ```bash
+   mkdir src
+   touch src/main.py src/models.py src/database.py src/routers src/utils src/alembic.ini
+   mkdir src/routers/audits src/routers/rules src/routers/objects src/routers/recommendations src/routers/reports
+   ```
+
+7. **Start Development Server**:
+   - Run the FastAPI server to ensure setup is correct.
+   ```bash
+   uvicorn src.main:app --reload --port 8000
+   ```
+
+### 1.2 Required Dependencies and Versions
+
+Add the following to `requirements.txt`:
+```text
+fastapi==0.111.0
+uvicorn==0.30.1
+sqlalchemy==2.0.31
+alembic==1.13.2
+lxml==5.2.2
+reportlab==4.2.2
+pandas==2.2.2
+python-multipart==0.0.9
+```
+
+Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+### 1.3 Environment Configuration
+
+- **Environment Variables**:
+  Create a `.env` file for configuration:
+  ```text
+  DATABASE_URL=sqlite:///firewall_tool.db
+  LOG_DIR=~/firewall-opt-tool/logs
+  ```
+  Use `python-dotenv` to load environment variables:
+  ```bash
+  pip install python-dotenv
+  ```
+
+- **VS Code Setup**:
+  - Install extensions: Python, Pylance, Jupyter, SQLTools.
+  - Configure `.vscode/settings.json`:
+    ```json
+    {
+      "python.linting.enabled": true,
+      "python.linting.pylintEnabled": true,
+      "python.formatting.provider": "black",
+      "editor.formatOnSave": true
+    }
+    ```
+
+- **Logging Configuration**:
+  Set up logging to write to `~/firewall-opt-tool/logs`:
+  ```python
+  # src/utils/logging.py
+  import logging
+  import os
+  from pathlib import Path
+
+  log_dir = Path(os.getenv("LOG_DIR", "~/firewall-opt-tool/logs")).expanduser()
+  log_dir.mkdir(parents=True, exist_ok=True)
+
+  logging.basicConfig(
+      filename=log_dir / "app.log",
+      level=logging.INFO,
+      format="%(asctime)s - %(levelname)s - %(message)s"
+  )
+  logger = logging.getLogger(__name__)
+  ```
+
+### 1.4 Database Setup Instructions
+
+- **SQLite Setup**:
+  - SQLite is file-based and requires no external server.
+  - Initialize the database using SQLAlchemy and Alembic.
+
+- **Alembic Setup**:
+  ```bash
+  alembic init src/migrations
+  ```
+  Update `alembic.ini`:
+  ```ini
+  sqlalchemy.url = sqlite:///firewall_tool.db
+  ```
+
+- **Database Connection**:
+  ```python
+  # src/database.py
+  from sqlalchemy import create_engine
+  from sqlalchemy.ext.declarative import declarative_base
+  from sqlalchemy.orm import sessionmaker
+  import os
+  from dotenv import load_dotenv
+
+  load_dotenv()
+  DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///firewall_tool.db")
+
+  engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+  SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+  Base = declarative_base()
+
+  def get_db():
+      db = SessionLocal()
+      try:
+          yield db
+      finally:
+          db.close()
+  ```
+
+---
+
+## 2. Development Phases
+
+### Phase 1: Basic Setup and Core Models
+
+**Objective**: Establish the FastAPI backend, define database models, and set up audit session creation.
+
+#### Step-by-Step Tasks:
+1. **Create Database Models**:
+   - Define models for `AuditSession`, `FirewallRule`, `RuleIssue`, `ObjectDefinition`, `ObjectIssue`, `Recommendation`, and `ReportFile` based on DBSchema.txt.
+   ```python
+   # src/models.py
+   from sqlalchemy import Column, Integer, String, Boolean, DateTime, JSON, ForeignKey
+   from sqlalchemy.orm import relationship
+   from src.database import Base
+   from datetime import datetime
+
+   class AuditSession(Base):
+       __tablename__ = "audit_sessions"
+       id = Column(Integer, primary_key=True, index=True)
+       session_name = Column(String(255), nullable=True)
+       start_time = Column(DateTime, default=datetime.utcnow)
+       end_time = Column(DateTime, nullable=True)
+       filename = Column(String(255))
+       file_hash = Column(String(64))
+       metadata = Column(JSON, default={})
+       rules = relationship("FirewallRule", back_populates="audit")
+       objects = relationship("ObjectDefinition", back_populates="audit")
+       recommendations = relationship("Recommendation", back_populates="audit")
+       reports = relationship("ReportFile", back_populates="audit")
+
+   class FirewallRule(Base):
+       __tablename__ = "firewall_rules"
+       id = Column(Integer, primary_key=True, index=True)
+       audit_id = Column(Integer, ForeignKey("audit_sessions.id"), index=True)
+       rule_name = Column(String(255))
+       rule_type = Column(String(50))
+       src_zone = Column(String(255))
+       dst_zone = Column(String(255))
+       src = Column(String(255))
+       dst = Column(String(255))
+       service = Column(String(255))
+       action = Column(String(50))
+       position = Column(Integer, index=True)
+       is_disabled = Column(Boolean, default=False)
+       raw_xml = Column(String, nullable=True)
+       audit = relationship("AuditSession", back_populates="rules")
+       issues = relationship("RuleIssue", back_populates="rule")
+
+   class RuleIssue(Base):
+       __tablename__ = "rule_issues"
+       id = Column(Integer, primary_key=True, index=True)
+       rule_id = Column(Integer, ForeignKey("firewall_rules.id"), index=True)
+       issue_type = Column(String(50))
+       description = Column(String(1000))
+       severity = Column(String(50))
+       rule = relationship("FirewallRule", back_populates="issues")
+
+   class ObjectDefinition(Base):
+       __tablename__ = "object_definitions"
+       id = Column(Integer, primary_key=True, index=True)
+       audit_id = Column(Integer, ForeignKey("audit_sessions.id"), index=True)
+       object_type = Column(String(50))
+       name = Column(String(255), index=True)
+       value = Column(String(255))
+       used_in_rules = Column(Integer, default=0)
+       raw_xml = Column(String, nullable=True)
+       audit = relationship("AuditSession", back_populates="objects")
+       issues = relationship("ObjectIssue", back_populates="object")
+
+   class ObjectIssue(Base):
+       __tablename__ = "object_issues"
+       id = Column(Integer, primary_key=True, index=True)
+       object_id = Column(Integer, ForeignKey("object_definitions.id"))
+       issue_type = Column(String(50))
+       description = Column(String(1000))
+       severity = Column(String(50))
+       object = relationship("ObjectDefinition", back_populates="issues")
+
+   class Recommendation(Base):
+       __tablename__ = "recommendations"
+       id = Column(Integer, primary_key=True, index=True)
+       audit_id = Column(Integer, ForeignKey("audit_sessions.id"), index=True)
+       linked_rule_id = Column(Integer, ForeignKey("firewall_rules.id"), nullable=True)
+       linked_object_id = Column(Integer, ForeignKey("object_definitions.id"), nullable=True)
+       recommendation = Column(String(1000))
+       category = Column(String(50))
+       audit = relationship("AuditSession", back_populates="recommendations")
+
+   class ReportFile(Base):
+       __tablename__ = "report_files"
+       id = Column(Integer, primary_key=True, index=True)
+       audit_id = Column(Integer, ForeignKey("audit_sessions.id"), index=True)
+       format = Column(String(50))
+       filepath = Column(String(255))
+       generated_at = Column(DateTime, default=datetime.utcnow)
+       audit = relationship("AuditSession", back_populates="reports")
+   ```
+
+2. **Initialize Database**:
+   - Create tables on app startup.
+   ```python
+   # src/main.py
+   from fastapi import FastAPI
+   from src.database import Base, engine
+   from src.routers import audits
+
+   app = FastAPI(title="Firewall Policy Optimization Tool")
+   Base.metadata.create_all(bind=engine)
+   app.include_router(audits.router)
+   ```
+
+3. **Implement Audit Session Creation**:
+   - Create the `POST /api/v1/audits` endpoint to handle file uploads.
+   ```python
+   # src/routers/audits/__init__.py
+   from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+   from sqlalchemy.orm import Session
+   from src.database import get_db
+   from src.models import AuditSession
+   from src.utils import parse_config
+   import hashlib
+   from datetime import datetime
+
+   router = APIRouter(prefix="/api/v1/audits", tags=["audits"])
+
+   @router.post("/", response_model=dict)
+   async def create_audit(
+       file: UploadFile = File(...),
+       session_name: str = Form(None),
+       db: Session = Depends(get_db)
+   ):
+       if file.content_type != "application/xml":
+           raise HTTPException(status_code=400, detail="Invalid file format. XML required.")
+
+       content = await file.read()
+       file_hash = hashlib.sha256(content).hexdigest()
+       
+       # Parse XML (placeholder for parse_config function)
+       try:
+           parsed_data = parse_config.parse_config(content)
+       except Exception as e:
+           raise HTTPException(status_code=400, detail=f"Parsing error: {str(e)}")
+
+       audit = AuditSession(
+           session_name=session_name,
+           filename=file.filename,
+           file_hash=file_hash,
+           metadata={"firmware": parsed_data.get("firmware", "unknown"), "rule_count": len(parsed_data.get("rules", []))}
+       )
+       db.add(audit)
+       db.commit()
+       db.refresh(audit)
+
+       return {
+           "status": "success",
+           "data": {
+               "audit_id": audit.id,
+               "session_name": audit.session_name,
+               "start_time": audit.start_time.isoformat(),
+               "filename": audit.filename,
+               "file_hash": audit.file_hash,
+               "metadata": audit.metadata
+           },
+           "message": "Audit session created successfully"
+       }
+   ```
+
+4. **Create Config Parser**:
+   - Implement a basic XML parser for Palo Alto configs.
+   ```python
+   # src/utils/parse_config.py
+   from lxml import etree
+
+   def parse_config(content: bytes) -> dict:
+       try:
+           tree = etree.fromstring(content)
+           rules = []
+           for rule in tree.xpath("//security/rules/entry"):
+               rules.append({
+                   "rule_name": rule.get("name"),
+                   "rule_type": "security",
+                   "src_zone": rule.xpath("from/text()")[0] if rule.xpath("from/text()") else "any",
+                   "dst_zone": rule.xpath("to/text()")[0] if rule.xpath("to/text()") else "any",
+                   "src": rule.xpath("source/text()")[0] if rule.xpath("source/text()") else "any",
+                   "dst": rule.xpath("destination/text()")[0] if rule.xpath("destination/text()") else "any",
+                   "service": rule.xpath("service/text()")[0] if rule.xpath("service/text()") else "any",
+                   "action": rule.xpath("action/text()")[0] if rule.xpath("action/text()") else "allow",
+                   "position": int(rule.xpath("../entry/@name").index(rule.get("name")) + 1),
+                   "is_disabled": rule.xpath("disabled/text()")[0] == "yes" if rule.xpath("disabled/text()") else False
+               })
+           return {
+               "firmware": tree.xpath("//config/devices/entry/deviceconfig/system/version/text()")[0] if tree.xpath("//config/devices/entry/deviceconfig/system/version/text()") else "unknown",
+               "rules": rules
+           }
+       except Exception as e:
+           raise ValueError(f"Failed to parse XML: {str(e)}")
+   ```
+
+#### Testing Checkpoints:
+- Verify SQLite database creation (`firewall_tool.db` exists with correct schema).
+- Test `POST /api/v1/audits` with a sample XML file; check response matches AIDesign.txt.
+- Ensure logs are written to `~/firewall-opt-tool/logs/app.log`.
+- Test with invalid XML to verify error handling (400 status code).
+
+#### Common Issues and Solutions:
+- **Issue**: SQLite database locked errors.
+  - **Solution**: Ensure `check_same_thread=False` in SQLite connection.
+- **Issue**: XML parsing fails for malformed files.
+  - **Solution**: Wrap `etree.fromstring` in try-except and return specific error messages.
+
+---
+
+### Phase 2: Authentication System
+
+**Objective**: Implement settings and logging without authentication (per MVP requirements).
+
+#### Step-by-Step Tasks:
+1. **Implement Debug Toggle**:
+   - Store debug mode in a configuration file.
+   ```python
+   # src/utils/config.py
+   import json
+   from pathlib import Path
+
+   config_path = Path("config.json")
+
+   def get_config():
+       if config_path.exists():
+           with open(config_path, "r") as f:
+               return json.load(f)
+       return {"debug_mode": False}
+
+   def set_debug_mode(value: bool):
+       config = get_config()
+       config["debug_mode"] = value
+       with open(config_path, "w") as f:
+           json.dump(config, f)
+   ```
+
+2. **Implement Log Export Endpoint**:
+   ```python
+   # src/routers/settings/__init__.py
+   from fastapi import APIRouter, HTTPException
+   from src.utils.config import get_config, set_debug_mode
+   from pathlib import Path
+   import os
+
+   router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
+
+   @router.get("/config")
+   def get_settings():
+       return get_config()
+
+   @router.post("/debug")
+   def toggle_debug(debug: bool):
+       set_debug_mode(debug)
+       return {"status": "success", "message": f"Debug mode set to {debug}"}
+
+   @router.get("/logs")
+   def export_logs():
+       log_file = Path(os.getenv("LOG_DIR", "~/firewall-opt-tool/logs")).expanduser() / "app.log"
+       if not log_file.exists():
+           raise HTTPException(status_code=404, detail="Log file not found")
+       return FileResponse(log_file, media_type="text/plain", filename="app.log")
+   ```
+
+#### Testing Checkpoints:
+- Verify debug mode persists across app restarts.
+- Test log export endpoint returns `app.log` file.
+- Ensure invalid log file paths return 404 errors.
+
+#### Common Issues and Solutions:
+- **Issue**: Log file not found.
+  - **Solution**: Ensure `LOG_DIR` is set and directory exists.
+- **Issue**: Debug mode not saved.
+  - **Solution**: Check file permissions for `config.json`.
+
+---
+
+### Phase 3: Core Business Logic APIs
+
+**Objective**: Implement APIs for rule analysis, object analysis, recommendations, and report generation.
+
+#### Step-by-Step Tasks:
+1. **Implement Rule Analysis**:
+   - Create `GET /api/v1/audits/{audit_id}/rules` endpoint.
+   ```python
+   # src/routers/rules/__init__.py
+   from fastapi import APIRouter, Depends, HTTPException
+   from sqlalchemy.orm import Session
+   from src.database import get_db
+   from src.models import FirewallRule, RuleIssue
+   from sqlalchemy import select
+   from typing import Optional
+
+   router = APIRouter(prefix="/api/v1/audits/{audit_id}/rules", tags=["rules"])
+
+   @router.get("/", response_model=dict)
+   async def get_rules(
+       audit_id: int,
+       issue_type: Optional[str] = None,
+       severity: Optional[str] = None,
+       limit: int = 50,
+       offset: int = 0,
+       db: Session = Depends(get_db)
+   ):
+       query = select(FirewallRule).where(FirewallRule.audit_id == audit_id)
+       rules = db.execute(query.offset(offset).limit(limit)).scalars().all()
+       if not rules:
+           raise HTTPException(status_code=404, detail="No rules found for audit")
+
+       result = []
+       for rule in rules:
+           issues_query = select(RuleIssue).where(RuleIssue.rule_id == rule.id)
+           if issue_type:
+               issues_query = issues_query.where(RuleIssue.issue_type == issue_type)
+           if severity:
+               issues_query = issues_query.where(RuleIssue.severity == severity)
+           issues = db.execute(issues_query).scalars().all()
+           result.append({
+               "id": rule.id,
+               "rule_name": rule.rule_name,
+               "rule_type": rule.rule_type,
+               "src_zone": rule.src_zone,
+               "dst_zone": rule.dst_zone,
+               "src": rule.src,
+               "dst": rule.dst,
+               "service": rule.service,
+               "action": rule.action,
+               "position": rule.position,
+               "is_disabled": rule.is_disabled,
+               "issues": [{"id": i.id, "issue_type": i.issue_type, "description": i.description, "severity": i.severity} for i in issues]
+           })
+
+       return {"status": "success", "data": result, "message": "Rules retrieved"}
+   ```
+
+2. **Implement Object Analysis**:
+   - Create `GET /api/v1/audits/{audit_id}/objects` endpoint.
+   ```python
+   # src/routers/objects/__init__.py
+   from fastapi import APIRouter, Depends, HTTPException
+   from sqlalchemy.orm import Session
+   from src.database import get_db
+   from src.models import ObjectDefinition, ObjectIssue
+   from sqlalchemy import select
+   from typing import Optional
+
+   router = APIRouter(prefix="/api/v1/audits/{audit_id}/objects", tags=["objects"])
+
+   @router.get("/", response_model=dict)
+   async def get_objects(
+       audit_id: int,
+       object_type: Optional[str] = None,
+       issue_type: Optional[str] = None,
+       limit: int = 50,
+       offset: int = 0,
+       db: Session = Depends(get_db)
+   ):
+       query = select(ObjectDefinition).where(ObjectDefinition.audit_id == audit_id)
+       if object_type:
+           query = query.where(ObjectDefinition.object_type == object_type)
+       objects = db.execute(query.offset(offset).limit(limit)).scalars().all()
+       if not objects:
+           raise HTTPException(status_code=404, detail="No objects found for audit")
+
+       result = []
+       for obj in objects:
+           issues_query = select(ObjectIssue).where(ObjectIssue.object_id == obj.id)
+           if issue_type:
+               issues_query = issues_query.where(ObjectIssue.issue_type == issue_type)
+           issues = db.execute(issues_query).scalars().all()
+           result.append({
+               "id": obj.id,
+               "object_type": obj.object_type,
+               "name": obj.name,
+               "value": obj.value,
+               "used_in_rules": obj.used_in_rules,
+               "issues": [{"id": i.id, "issue_type": i.issue_type, "description": i.description, "severity": i.severity} for i in issues]
+           })
+
+       return {"status": "success", "data": result, "message": "Objects retrieved"}
+   ```
+
+3. **Implement Recommendations**:
+   - Create `GET /api/v1/audits/{audit_id}/recommendations` endpoint.
+   ```python
+   # src/routers/recommendations/__init__.py
+   from fastapi import APIRouter, Depends, HTTPException
+   from sqlalchemy.orm import Session
+   from src.database import get_db
+   from src.models import Recommendation
+   from sqlalchemy import select
+   from typing import Optional
+
+   router = APIRouter(prefix="/api/v1/audits/{audit_id}/recommendations", tags=["recommendations"])
+
+   @router.get("/", response_model=dict)
+   async def get_recommendations(
+       audit_id: int,
+       category: Optional[str] = None,
+       limit: int = 50,
+       offset: int = 0,
+       db: Session = Depends(get_db)
+   ):
+       query = select(Recommendation).where(Recommendation.audit_id == audit_id)
+       if category:
+           query = query.where(Recommendation.category == category)
+       recommendations = db.execute(query.offset(offset).limit(limit)).scalars().all()
+       if not recommendations:
+           raise HTTPException(status_code=404, detail="No recommendations found for audit")
+
+       result = [
+           {
+               "id": r.id,
+               "linked_rule_id": r.linked_rule_id,
+               "linked_object_id": r.linked_object_id,
+               "recommendation": r.recommendation,
+               "category": r.category
+           } for r in recommendations
+       ]
+       return {"status": "success", "data": result, "message": "Recommendations retrieved"}
+   ```
+
+4. **Implement Report Generation**:
+   - Create `POST /api/v1/audits/{audit_id}/reports` endpoint.
+   ```python
+   # src/routers/reports/__init__.py
+   from fastapi import APIRouter, Depends, HTTPException
+   from fastapi.responses import FileResponse
+   from sqlalchemy.orm import Session
+   from src.database import get_db
+   from src.models import AuditSession, ReportFile
+   from src.utils import generate_report
+   from pydantic import BaseModel
+   from pathlib import Path
+   import os
+
+   router = APIRouter(prefix="/api/v1/audits/{audit_id}/reports", tags=["reports"])
+
+   class ReportRequest(BaseModel):
+       format: str
+       include_rules: bool = True
+       include_objects: bool = True
+       include_issues: bool = True
+       include_recommendations: bool = True
+
+   @router.post("/", response_model=dict)
+   async def create_report(
+       audit_id: int,
+       request: ReportRequest,
+       db: Session = Depends(get_db)
+   ):
+       audit = db.query(AuditSession).filter(AuditSession.id == audit_id).first()
+       if not audit:
+           raise HTTPException(status_code=404, detail="Audit session not found")
+
+       report_dir = Path(os.getenv("LOG_DIR", "~/firewall-opt-tool/reports")).expanduser()
+       report_dir.mkdir(parents=True, exist_ok=True)
+       filepath = report_dir / f"report_{audit_id}_{request.format}.{request.format}"
+
+       try:
+           generate_report.generate_report(audit_id, request, filepath, db)
+       except Exception as e:
+           raise HTTPException(status_code=500, detail=f"Report generation failed: {str(e)}")
+
+       report = ReportFile(audit_id=audit_id, format=request.format, filepath=str(filepath))
+       db.add(report)
+       db.commit()
+
+       return FileResponse(filepath, media_type=f"application/{request.format}", filename=f"report_{audit_id}.{request.format}")
+   ```
+
+5. **Implement Report Generator**:
+   ```python
+   # src/utils/generate_report.py
+   from reportlab.lib.pagesizes import letter
+   from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+   from reportlab.lib.styles import getSampleStyleSheet
+   from sqlalchemy.orm import Session
+   from src.models import AuditSession, FirewallRule, ObjectDefinition, Recommendation
+   import pandas as pd
+   import json
+
+   def generate_report(audit_id: int, request: dict, filepath: str, db: Session):
+       audit = db.query(AuditSession).filter(AuditSession.id == audit_id).first()
+       if request.format == "pdf":
+           doc = SimpleDocTemplate(filepath, pagesize=letter)
+           styles = getSampleStyleSheet()
+           story = [Paragraph(f"Audit Report: {audit.session_name}", styles["Title"]), Spacer(1, 12)]
+           if request.include_rules:
+               rules = db.query(FirewallRule).filter(FirewallRule.audit_id == audit_id).all()
+               story.append(Paragraph("Rules", styles["Heading2"]))
+               for rule in rules:
+                   story.append(Paragraph(f"{rule.rule_name}: {rule.src} -> {rule.dst}", styles["BodyText"]))
+           doc.build(story)
+       elif request.format == "csv":
+           data = {"rules": []}
+           if request.include_rules:
+               rules = db.query(FirewallRule).filter(FirewallRule.audit_id == audit_id).all()
+               data["rules"] = [{"id": r.id, "name": r.rule_name, "src": r.src, "dst": r.dst} for r in rules]
+           df = pd.DataFrame(data["rules"])
+           df.to_csv(filepath, index=False)
+       elif request.format == "json":
+           data = {"audit_id": audit_id, "rules": []}
+           if request.include_rules:
+               rules = db.query(FirewallRule).filter(FirewallRule.audit_id == audit_id).all()
+               data["rules"] = [{"id": r.id, "name": r.rule_name, "src": r.src, "dst": r.dst} for r in rules]
+           with open(filepath, "w") as f:
+               json.dump(data, f)
+   ```
+
+#### Testing Checkpoints:
+- Test rule retrieval with filters (`issue_type`, `severity`).
+- Verify object retrieval with pagination.
+- Check recommendation endpoint with `category` filter.
+- Test report generation for PDF, CSV, and JSON formats.
+- Ensure 404 responses for non-existent audit IDs.
+
+#### Common Issues and Solutions:
+- **Issue**: Slow query performance for large rule sets.
+  - **Solution**: Add indexes on `audit_id`, `rule_name`, and `position` (already in schema).
+- **Issue**: Report generation fails for large datasets.
+  - **Solution**: Use streaming for PDF/CSV output to avoid memory issues.
+
+---
+
+### Phase 4: Advanced Features
+
+**Objective**: Add rule and object analysis logic and visualization data endpoints.
+
+#### Step-by-Step Tasks:
+1. **Implement Rule Analysis Logic**:
+   - Detect shadowed, duplicate, and unused rules.
+   ```python
+   # src/utils/analyze_rules.py
+   from src.models import FirewallRule, RuleIssue
+   from sqlalchemy.orm import Session
+
+   def analyze_rules(audit_id: int, db: Session):
+       rules = db.query(FirewallRule).filter(FirewallRule.audit_id == audit_id).order_by(FirewallRule.position).all()
+       for i, rule in enumerate(rules):
+           for j, other_rule in enumerate(rules[:i]):
+               if (
+                   rule.src == other_rule.src
+                   and rule.dst == other_rule.dst
+                   and rule.service == other_rule.service
+                   and rule.action == other_rule.action
+               ):
+                   issue = RuleIssue(
+                       rule_id=rule.id,
+                       issue_type="duplicate",
+                       description=f"Duplicate of rule #{other_rule.position}",
+                       severity="medium"
+                   )
+                   db.add(issue)
+               elif (
+                   rule.src == "any" or other_rule.src == "any" or rule.src == other_rule.src
+                   and rule.dst == "any" or other_rule.dst == "any" or rule.dst == other_rule.dst
+                   and rule.position > other_rule.position
+               ):
+                   issue = RuleIssue(
+                       rule_id=rule.id,
+                       issue_type="shadowed",
+                       description=f"Shadowed by rule #{other_rule.position}",
+                       severity="medium"
+                   )
+                   db.add(issue)
+       db.commit()
+   ```
+
+2. **Implement Object Analysis Logic**:
+   ```python
+   # src/utils/analyze_objects.py
+   from src.models import ObjectDefinition, ObjectIssue
+   from sqlalchemy.orm import Session
+
+   def analyze_objects(audit_id: int, db: Session):
+       objects = db.query(ObjectDefinition).filter(ObjectDefinition.audit_id == audit_id).all()
+       for obj in objects:
+           if obj.used_in_rules == 0:
+               issue = ObjectIssue(
+                   object_id=obj.id,
+                   issue_type="unused",
+                   description="Object not referenced in any rules",
+                   severity="low"
+               )
+               db.add(issue)
+       db.commit()
+   ```
+
+3. **Generate Recommendations**:
+   ```python
+   # src/utils/generate_recommendations.py
+   from src.models import RuleIssue, ObjectIssue, Recommendation
+   from sqlalchemy.orm import Session
+
+   def generate_recommendations(audit_id: int, db: Session):
+       rule_issues = db.query(RuleIssue).join(FirewallRule).filter(FirewallRule.audit_id == audit_id).all()
+       for issue in rule_issues:
+           recommendation = Recommendation(
+               audit_id=audit_id,
+               linked_rule_id=issue.rule_id,
+               recommendation=f"Consider removing or reordering rule due to {issue.issue_type}.",
+               category="Cleanup" if issue.issue_type in ["duplicate", "unused"] else "Reorder"
+           )
+           db.add(recommendation)
+       db.commit()
+   ```
+
+4. **Add Visualization Data Endpoint**:
+   ```python
+   # src/routers/visualizations/__init__.py
+   from fastapi import APIRouter, Depends, HTTPException
+   from sqlalchemy.orm import Session
+   from src.database import get_db
+   from src.models import RuleIssue
+   from collections import Counter
+
+   router = APIRouter(prefix="/api/v1/audits/{audit_id}/visualizations", tags=["visualizations"])
+
+   @router.get("/issue-distribution", response_model=dict)
+   async def issue_distribution(audit_id: int, db: Session = Depends(get_db)):
+       issues = db.query(RuleIssue).join(FirewallRule).filter(FirewallRule.audit_id == audit_id).all()
+       distribution = Counter(issue.issue_type for issue in issues)
+       data = [{"name": k, "count": v} for k, v in distribution.items()]
+       return {"status": "success", "data": data, "message": "Issue distribution retrieved"}
+   ```
+
+#### Testing Checkpoints:
+- Test rule analysis for duplicate and shadowed rules.
+- Verify object analysis detects unused objects.
+- Check recommendations are generated for all issues.
+- Test visualization endpoint returns correct issue counts.
+
+#### Common Issues and Solutions:
+- **Issue**: Analysis logic misses edge cases.
+  - **Solution**: Test with diverse config files from different Palo Alto firmware versions.
+- **Issue**: Slow analysis for large configs.
+  - **Solution**: Use stream parsing for XML and optimize SQL queries with indexes.
+
+---
+
+### Phase 5: Testing and Optimization
+
+**Objective**: Ensure backend robustness and performance.
+
+#### Step-by-Step Tasks:
+1. **Write Unit Tests**:
+   - Use pytest for testing.
+   ```python
+   # tests/test_audits.py
+   import pytest
+   from fastapi.testclient import TestClient
+   from src.main import app
+   from src.database import Base, engine, SessionLocal
+
+   @pytest.fixture
+   def client():
+       Base.metadata.create_all(bind=engine)
+       yield TestClient(app)
+       Base.metadata.drop_all(bind=engine)
+
+   def test_create_audit(client):
+       with open("test_config.xml", "rb") as f:
+           response = client.post("/api/v1/audits", files={"file": ("test_config.xml", f, "application/xml")})
+       assert response.status_code == 200
+       assert response.json()["status"] == "success"
+       assert "audit_id" in response.json()["data"]
+   ```
+
+2. **Optimize Database Queries**:
+   - Add indexes to `audit_id`, `rule_name`, and `position` (already in schema).
+   - Use pagination for all list endpoints.
+
+3. **Profile Performance**:
+   - Use `cProfile` to identify bottlenecks.
+   ```bash
+   python -m cProfile -s time src/main.py
+   ```
+
+#### Testing Checkpoints:
+- Achieve 80%+ test coverage (use `pytest-cov`).
+- Test with large XML configs (>1000 rules).
+- Verify performance with pagination enabled.
+
+#### Common Issues and Solutions:
+- **Issue**: Tests fail due to database state.
+  - **Solution**: Use pytest fixtures to reset database state.
+- **Issue**: Performance degrades with large datasets.
+  - **Solution**: Implement query caching or batch processing.
+
+---
+
+## 3. Code Structure Guidelines
+
+### 3.1 Folder Organization
+```
+firewall-opt-tool-backend/
+├── src/
+│   ├── main.py              # FastAPI app entry point
+│   ├── database.py          # Database setup and session management
+│   ├── models.py            # SQLAlchemy models
+│   ├── utils/               # Utility functions
+│   │   ├── parse_config.py  # XML parsing logic
+│   │   ├── analyze_rules.py # Rule analysis logic
+│   │   ├── analyze_objects.py # Object analysis logic
+│   │   ├── generate_recommendations.py # Recommendation logic
+│   │   ├── generate_report.py # Report generation logic
+│   │   ├── logging.py       # Logging configuration
+│   │   └── config.py        # Configuration management
+│   ├── routers/
+│   │   ├── audits/          # Audit session endpoints
+│   │   ├── rules/           # Rule analysis endpoints
+│   │   ├── objects/         # Object analysis endpoints
+│   │   ├── recommendations/  # Recommendation endpoints
+│   │   ├── reports/         # Report generation endpoints
+│   │   └── settings/        # Settings and log export endpoints
+│   ├── migrations/          # Alembic migration scripts
+│   └── tests/               # Unit tests
+├── requirements.txt          # Dependencies
+├── alembic.ini              # Alembic configuration
+└── .env                     # Environment variables
+```
+
+### 3.2 File Naming Conventions
+- Use `snake_case` for Python files (e.g., `parse_config.py`).
+- Use singular nouns for model files (e.g., `models.py`).
+- Organize routers by feature (e.g., `routers/audits/__init__.py`).
+
+### 3.3 Code Organization Patterns
+- **Modular Routers**: Each feature (audits, rules, etc.) has its own router.
+- **Dependency Injection**: Use FastAPI’s `Depends` for database sessions.
+- **Separation of Concerns**: Keep parsing, analysis, and reporting logic in `utils/`.
+
+### 3.4 Best Practices
+- Use type hints for all functions.
+- Follow PEP 8 with Black formatting.
+- Log all API requests and errors.
+- Validate inputs with Pydantic models.
+
+---
+
+## 4. Deployment Preparation
+
+### 4.1 Production Configuration
+- **Package with PyInstaller**:
+  ```bash
+  pip install pyinstaller
+  pyinstaller --onefile src/main.py
+  ```
+- Update `.env` for production:
+  ```text
+  DATABASE_URL=sqlite:///./firewall_tool.db
+  LOG_DIR=./logs
+  ```
+
+### 4.2 Security Checklist
+- Ensure no external API calls are made.
+- Validate all file uploads for XML content type.
+- Sanitize inputs to prevent SQL injection (handled by SQLAlchemy).
+- Use file hashing to verify integrity.
+
+### 4.3 Performance Optimization
+- Cache parsed XML results in memory during analysis.
+- Use streaming for large report generation.
+- Implement connection pooling for SQLite if multi-user support is added.
+
+### 4.4 Monitoring Setup
+- Log all API requests and errors to `~/firewall-opt-tool/logs/app.log`.
+- Add optional Sentry integration (opt-in only):
+  ```python
+  # src/utils/logging.py
+  import sentry_sdk
+  from src.utils.config import get_config
+
+  if get_config().get("sentry_enabled", False):
+      sentry_sdk.init(dsn="your-sentry-dsn", traces_sample_rate=1.0)
+  ```

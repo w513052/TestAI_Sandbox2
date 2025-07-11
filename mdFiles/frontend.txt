@@ -1,0 +1,553 @@
+Firewall Policy Optimization Tool - Frontend Development Guide
+This guide provides a comprehensive roadmap for building the frontend of the Firewall Policy Optimization Tool using Electron, React, Tailwind CSS, and Vite. It aligns with the provided project documentation (TechStackDoc.txt, ProjectBriefDoc.txt, AIDesign.txt, PRD.txt, DBSchema.txt) and focuses on creating a user-friendly, privacy-first desktop application for cybersecurity professionals managing Palo Alto firewall configurations.
+
+1. Project Setup & Environment
+1.1 Frontend Framework Setup Instructions
+The frontend uses Electron for desktop deployment, React for component-based UI, Tailwind CSS for styling, and Vite for fast builds.
+Steps to Set Up:
+
+Install Node.js (v18 or later recommended).
+Create Project with Electron + Vite:npx create-electron-vite my-firewall-tool --template=react-ts
+cd my-firewall-tool
+npm install
+
+
+Set Up Electron Builder for packaging:npm install --save-dev electron-builder
+
+
+Start Development Server:npm run dev
+
+
+
+1.2 Required Packages and Dependencies
+Install the following dependencies in package.json:
+{
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.14.0",
+    "react-hook-form": "^7.45.0",
+    "zod": "^3.21.4",
+    "recharts": "^2.7.2",
+    "axios": "^1.4.0",
+    "tailwindcss": "^3.3.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.0.3",
+    "electron": "^25.3.0",
+    "electron-builder": "^24.4.0",
+    "vite": "^4.4.0",
+    "typescript": "^5.1.6",
+    "eslint": "^8.45.0",
+    "prettier": "^3.0.0",
+    "@tailwindcss/forms": "^0.5.3"
+  }
+}
+
+Run:
+npm install
+
+1.3 Development Environment Configuration
+
+VS Code Setup:
+Extensions: ESLint, Prettier, Tailwind CSS IntelliSense, React Snippets.
+Configure .eslintrc.json and .prettierrc for consistent linting and formatting.
+
+
+Tailwind CSS Setup:Create tailwind.config.js:module.exports = {
+  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
+  theme: { extend: {} },
+  plugins: [require("@tailwindcss/forms")],
+};
+
+Add to src/index.css:@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+Electron Configuration:Update vite.config.ts for Electron compatibility:import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+export default defineConfig({
+  plugins: [react()],
+  build: {
+    outDir: "dist",
+  },
+});
+
+
+
+1.4 Integration with Backend APIs
+
+Backend: FastAPI running on localhost:8000 (per AIDesign.txt).
+API Client: Use axios for HTTP requests.
+Base URL: Configure axios with base URL http://localhost:8000/api/v1.
+Example Setup:Create src/api/client.ts:import axios from "axios";
+
+const apiClient = axios.create({
+  baseURL: "http://localhost:8000/api/v1",
+  headers: { "Content-Type": "application/json" },
+});
+
+export default apiClient;
+
+
+
+
+2. UI/UX Planning
+2.1 User Interface Mockups/Wireframes Description
+The UI is minimalist, professional, and functional, designed for cybersecurity professionals. Key screens:
+
+Dashboard: Displays recent audit sessions with options to start a new audit or view past results.
+Upload Screen: File upload interface for Palo Alto config files with session naming.
+Analysis Results: Tabbed view for Rules, Objects, Issues, and Recommendations.
+Report Generation: Options to select report format (PDF, CSV, JSON) and export.
+Settings: Toggle for debug mode and log export.
+
+Wireframe Descriptions:
+
+Dashboard: Grid layout with cards for recent audits, a "New Audit" button, and a settings icon.
+Upload Screen: Drag-and-drop file input, session name field, and "Analyze" button.
+Results Page: Tabs for Rules/Objects/Issues/Recommendations, each with a searchable, paginated table.
+Report Screen: Dropdown for format selection, checkboxes for including rules/objects/issues/recommendations, and export button.
+
+2.2 User Flow Diagrams
+[Start] → [Dashboard]
+          ↳ [New Audit] → [Upload Config] → [Analysis Running] → [Results]
+          ↳ [View Audit] → [Results] → [Export Report]
+          ↳ [Settings] → [Toggle Debug / Export Logs]
+
+2.3 Component Hierarchy
+App
+├── Header (Navigation, Settings Toggle)
+├── Dashboard
+│   ├── AuditCard (List of recent audits)
+│   └── NewAuditButton
+├── UploadScreen
+│   ├── FileUpload (Drag-and-drop + session name)
+│   └── AnalyzeButton
+├── ResultsScreen
+│   ├── Tabs (Rules, Objects, Issues, Recommendations)
+│   ├── DataTable (Paginated, searchable table for each tab)
+│   └── ExportButton
+├── SettingsScreen
+│   ├── DebugToggle
+│   └── LogExport
+└── LoadingOverlay (Global loading state)
+
+2.4 Responsive Design Considerations
+
+Desktop Focus: Optimized for desktop (Electron app), minimum resolution 1280x720.
+Responsive Tables: Use Tailwind’s responsive utilities (overflow-x-auto) for large tables.
+Mobile Consideration: Ensure buttons and inputs are touch-friendly (min 44px tap targets) for potential future web deployment.
+Accessibility: Use ARIA labels, keyboard navigation, and high-contrast Tailwind classes.
+
+
+3. Development Phases
+Phase 1: Basic App Structure and Navigation
+Goal: Set up the app shell, navigation, and dashboard.
+Component Specifications
+
+App: Root component with Router and global layout.
+Header: Navigation bar with links to Dashboard, Settings, and app branding.
+Dashboard: Displays audit cards and a "New Audit" button.
+AuditCard: Displays audit metadata (session name, date, filename).
+
+Implementation Tasks
+
+Set up React Router with routes for /, /upload, /results/:auditId, /settings.
+Create Header component with Tailwind-styled navigation.
+Build Dashboard with a grid of AuditCard components.
+Mock audit data for initial UI testing.
+
+Code Example
+// src/App.tsx
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import Header from "./components/Header";
+import Dashboard from "./pages/Dashboard";
+import UploadScreen from "./pages/UploadScreen";
+import ResultsScreen from "./pages/ResultsScreen";
+import SettingsScreen from "./pages/SettingsScreen";
+
+function App() {
+  return (
+    <BrowserRouter>
+      <div className="min-h-screen bg-gray-100">
+        <Header />
+        <main className="container mx-auto p-4">
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/upload" element={<UploadScreen />} />
+            <Route path="/results/:auditId" element={<ResultsScreen />} />
+            <Route path="/settings" element={<SettingsScreen />} />
+          </Routes>
+        </main>
+      </div>
+    </BrowserRouter>
+  );
+}
+
+export default App;
+
+// src/components/Header.tsx
+function Header() {
+  return (
+    <nav className="bg-blue-600 text-white p-4">
+      <div className="container mx-auto flex justify-between">
+        <h1 className="text-xl font-bold">Firewall Policy Optimizer</h1>
+        <div className="space-x-4">
+          <a href="/" className="hover:underline">Dashboard</a>
+          <a href="/upload" className="hover:underline">New Audit</a>
+          <a href="/settings" className="hover:underline">Settings</a>
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+export default Header;
+
+API Integration Points
+
+GET /api/v1/audits to fetch audit session list for Dashboard.
+
+Testing Checkpoints
+
+Verify navigation works across all routes.
+Ensure Dashboard displays mock audit data correctly.
+Test Tailwind styles for consistent layout.
+
+Phase 2: Authentication UI and User Management
+Goal: No authentication in MVP (local-only app). Implement settings UI for debug mode and log export.
+Component Specifications
+
+SettingsScreen: Toggle for debug mode and button to export logs.
+DebugToggle: Checkbox to enable/disable debug logging.
+LogExport: Button to download logs as a text file.
+
+Implementation Tasks
+
+Create SettingsScreen with Tailwind-styled toggle and button.
+Use Electron’s fs module to export logs to ~/firewall-opt-tool/logs.
+Store debug toggle state in local storage.
+
+Code Example
+// src/pages/SettingsScreen.tsx
+import { useState } from "react";
+
+function SettingsScreen() {
+  const [debugMode, setDebugMode] = useState(false);
+
+  const handleExportLogs = () => {
+    // Placeholder for Electron fs API
+    console.log("Exporting logs...");
+  };
+
+  return (
+    <div className="p-6">
+      <h2 className="text-2xl font-bold mb-4">Settings</h2>
+      <div className="space-y-4">
+        <label className="flex items-center">
+          <input
+            type="checkbox"
+            checked={debugMode}
+            onChange={(e) => setDebugMode(e.target.checked)}
+            className="mr-2"
+          />
+          Enable Debug Mode
+        </label>
+        <button
+          onClick={handleExportLogs}
+          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+        >
+          Export Logs
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default SettingsScreen;
+
+API Integration Points
+
+None (local-only settings).
+
+Testing Checkpoints
+
+Verify debug toggle persists across sessions.
+Test log export functionality with sample logs.
+Ensure UI is accessible and responsive.
+
+Phase 3: Core Feature Interfaces
+Goal: Implement file upload, analysis results, and report generation.
+Component Specifications
+
+UploadScreen: Drag-and-drop file input, session name input, and analyze button.
+ResultsScreen: Tabbed interface with tables for Rules, Objects, Issues, Recommendations.
+DataTable: Reusable paginated table component.
+ExportButton: Triggers report generation.
+
+Implementation Tasks
+
+Build UploadScreen with react-hook-form and zod for validation.
+Create ResultsScreen with tabs using Tailwind.
+Implement DataTable with pagination and filtering.
+Add ExportButton to trigger report generation API.
+
+Code Example
+// src/pages/UploadScreen.tsx
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import apiClient from "../api/client";
+
+const schema = z.object({
+  file: z.any().refine((file) => file?.type === "application/xml", "Must be XML"),
+  sessionName: z.string().min(1, "Session name is required"),
+});
+
+type FormData = z.infer<typeof schema>;
+
+function UploadScreen() {
+  const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
+    resolver: zodResolver(schema),
+  });
+
+  const onSubmit = async (data: FormData) => {
+    const formData = new FormData();
+    formData.append("file", data.file[0]);
+    formData.append("session_name", data.sessionName);
+
+    try {
+      const response = await apiClient.post("/audits", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      window.location.href = `/results/${response.data.data.audit_id}`;
+    } catch (error) {
+      console.error("Upload failed:", error);
+    }
+  };
+
+  return (
+    <div className="p-6">
+      <h2 className="text-2xl font-bold mb-4">New Audit</h2>
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <div>
+          <label className="block mb-1">Configuration File</label>
+          <input
+            type="file"
+            accept=".xml"
+            {...register("file")}
+            className="border p-2 w-full"
+          />
+          {errors.file && <p className="text-red-600">{errors.file.message}</p>}
+        </div>
+        <div>
+          <label className="block mb-1">Session Name</label>
+          <input
+            type="text"
+            {...register("sessionName")}
+            className="border p-2 w-full"
+          />
+          {errors.sessionName && <p className="text-red-600">{errors.sessionName.message}</p>}
+        </div>
+        <button
+          type="submit"
+          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+        >
+          Analyze
+        </button>
+      </form>
+    </div>
+  );
+}
+
+export default UploadScreen;
+
+API Integration Points
+
+POST /api/v1/audits for file upload.
+GET /api/v1/audits/{audit_id} for results.
+GET /api/v1/audits/{audit_id}/rules, /objects, /recommendations for tabbed data.
+POST /api/v1/audits/{audit_id}/reports for report generation.
+
+Testing Checkpoints
+
+Validate file upload with XML files.
+Test table pagination and filtering.
+Verify report generation for all formats.
+Ensure error messages display correctly.
+
+Phase 4: Advanced Features and Polish
+Goal: Add visualizations and advanced UI features.
+Component Specifications
+
+ChartComponent: Recharts-based visualization for rule distribution or issue severity.
+SearchBar: Filterable search for tables.
+FeedbackModal: Collect user feedback on analysis accuracy.
+
+Implementation Tasks
+
+Integrate Recharts for rule/issue visualizations.
+Add SearchBar to DataTable for filtering.
+Create FeedbackModal for optional user feedback.
+
+Code Example
+// src/components/ChartComponent.tsx
+import { BarChart, Bar, XAxis, YAxis, Tooltip } from "recharts";
+
+function ChartComponent({ data }: { data: { name: string; count: number }[] }) {
+  return (
+    <div className="p-4">
+      <h3 className="text-lg font-bold mb-2">Issue Distribution</h3>
+      <BarChart width={600} height={300} data={data}>
+        <XAxis dataKey="name" />
+        <YAxis />
+        <Tooltip />
+        <Bar dataKey="count" fill="#2563eb" />
+      </BarChart>
+    </div>
+  );
+}
+
+export default ChartComponent;
+
+API Integration Points
+
+Use /api/v1/audits/{audit_id}/rules and /objects for chart data.
+
+Testing Checkpoints
+
+Test chart rendering with sample data.
+Verify search functionality across tables.
+Ensure modal is accessible and dismissible.
+
+Phase 5: Testing and Optimization
+Goal: Ensure robustness and performance.
+Implementation Tasks
+
+Write unit tests for components using Jest/React Testing Library.
+Optimize table rendering with virtualization (e.g., react-window).
+Test across Windows and Linux with Electron Builder.
+
+Code Example
+// src/components/__tests__/DataTable.test.tsx
+import { render, screen } from "@testing-library/react";
+import DataTable from "../DataTable";
+
+test("renders DataTable with data", () => {
+  const data = [{ id: 1, rule_name: "Test Rule" }];
+  render(<DataTable data={data} />);
+  expect(screen.getByText("Test Rule")).toBeInTheDocument();
+});
+
+API Integration Points
+
+Mock API responses for testing.
+
+Testing Checkpoints
+
+Achieve 80%+ test coverage.
+Verify app performance with large rule sets.
+Test installer on Windows/Linux.
+
+
+4. Code Organization
+4.1 Folder Structure
+src/
+├── api/
+│   └── client.ts
+├── components/
+│   ├── Header.tsx
+│   ├── AuditCard.tsx
+│   ├── DataTable.tsx
+│   ├── ChartComponent.tsx
+│   └── FeedbackModal.tsx
+├── pages/
+│   ├── Dashboard.tsx
+│   ├── UploadScreen.tsx
+│   ├── ResultsScreen.tsx
+│   └── SettingsScreen.tsx
+├── styles/
+│   └── index.css
+├── types/
+│   └── api.ts (TypeScript interfaces for API responses)
+├── App.tsx
+├── main.ts (Electron entry point)
+└── index.html
+
+4.2 Component Organization
+
+Reusable Components: Header, DataTable, ChartComponent, FeedbackModal.
+Page Components: Dashboard, UploadScreen, ResultsScreen, SettingsScreen.
+Utility Components: LoadingOverlay, ErrorMessage.
+
+4.3 State Management Approach
+
+Use React’s Context API for global state (e.g., debug mode, current audit).
+Local state with useState and useReducer for component-specific data.
+Example Context:// src/context/AppContext.tsx
+import { createContext, useState } from "react";
+
+type AppContextType = {
+  debugMode: boolean;
+  setDebugMode: (value: boolean) => void;
+};
+
+export const AppContext = createContext<AppContextType>({
+  debugMode: false,
+  setDebugMode: () => {},
+});
+
+export function AppProvider({ children }: { children: React.ReactNode }) {
+  const [debugMode, setDebugMode] = useState(false);
+  return (
+    <AppContext.Provider value={{ debugMode, setDebugMode }}>
+      {children}
+    </AppContext.Provider>
+  );
+}
+
+
+
+4.4 Styling Methodology
+
+Use Tailwind CSS for all styling.
+Create reusable utility classes in index.css for common patterns.
+Example:.btn-primary {
+  @apply bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700;
+}
+
+
+
+
+5. User Experience Guidelines
+5.1 Loading States and Error Handling
+
+Loading: Show LoadingOverlay during API calls (e.g., file upload, analysis).
+Errors: Display error messages in a red banner with details from API error_code.
+Example:function ErrorMessage({ message }: { message: string }) {
+  return (
+    <div className="bg-red-100 text-red-700 p-4 rounded mb-4">
+      {message}
+    </div>
+  );
+}
+
+
+
+5.2 Form Validation and User Feedback
+
+Use react-hook-form with zod for validation.
+Provide real-time feedback (e.g., "Invalid XML file" on upload).
+Show success messages after actions (e.g., "Audit session created").
+
+5.3 Mobile Responsiveness Requirements
+
+Optimize for desktop but ensure touch-friendly inputs.
+Use Tailwind’s responsive utilities (sm:, md:, lg:) for future-proofing.
+Test with Electron’s dev tools in mobile viewports.
+
+
+This guide provides a clear path to building a robust, user-friendly frontend for the Firewall Policy Optimization Tool. Follow the phased approach, leverage the provided code snippets, and adhere to the UX guidelines to ensure a professional, privacy-first experience for cybersecurity users.

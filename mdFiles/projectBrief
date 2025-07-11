@@ -1,0 +1,65 @@
+# 🔒 **Firewall Policy Optimization Tool** – Project Brief
+
+## 1. **Project Overview**
+
+This is a self-hosted tool designed for cybersecurity teams to analyze and evaluate Palo Alto firewall rule sets. The tool identifies redundant, shadowed, unused, and overlapping rules or objects and provides actionable recommendations to optimize firewall configurations without making direct changes. It aims to improve firewall efficiency and reduce policy bloat while maintaining security posture.
+
+---
+
+## 2. **Target Users**
+
+* Cybersecurity teams responsible for firewall management and network security
+* Security engineers tasked with maintaining clean and efficient rule bases
+* Organizations using Palo Alto Networks firewalls, particularly those with large or aging rule sets
+* Auditors or consultants performing firewall policy reviews
+
+---
+
+## 3. **Core Features**
+
+* **Local Rule Set Parsing**: Ingest and parse Palo Alto firewall configuration files locally
+* **Redundancy Detection**:
+
+  * **Duplicate Rules**: Identify exact or functionally identical rules
+  * **Shadowed Rules**: Highlight rules that are rendered ineffective due to higher-priority rules
+  * **Unused Rules**: Detect rules that have never been triggered (based on log metadata if available)
+  * **Overlapping Rules**: Spot rules that partially overlap in scope, ports, or source/destination
+* **Object Cleanup**: Identify unused or redundant address/service objects
+* **Optimization Recommendations**: Provide safe, human-readable suggestions for rulebase cleanup and optimization
+* **Report Generation**: Export findings in formats like PDF, CSV, or JSON for internal reviews or audits
+* **Privacy-First Design**: Processes all data locally without storing or transmitting any configuration data
+
+---
+
+## 4. **User Journey**
+
+1. **Upload Config File**: The user launches the self-hosted app and uploads a Palo Alto rule set or configuration file.
+2. **Parsing and Analysis**: The tool parses the configuration and begins rule analysis locally.
+3. **Redundancy Review**: The app identifies and categorizes redundant rules and objects.
+4. **Optimization Suggestions**: The user is shown clear, categorized recommendations (e.g., "Rule 17 is shadowed by Rule 12").
+5. **Export Results**: User can export the results for further review or documentation.
+6. **Manual Action**: Users take the recommendations and manually adjust firewall rules in their live environment, maintaining full control.
+
+---
+
+## 5. **Business Goals**
+
+* Provide a low-risk, no-data-leak solution to help cybersecurity teams reduce technical debt in firewall configurations.
+* Differentiate by offering focused support for Palo Alto Networks, with high accuracy and transparency.
+* Serve as a trusted analysis tool in regulated or high-security environments where SaaS tools are unsuitable.
+* Potential revenue models:
+
+  * **One-time license fee** for enterprise use
+  * **Per-seat or per-location pricing**
+  * **Open-core model** with paid premium features like advanced visualization or multi-file diffing
+
+---
+
+## 6. **Success Metrics**
+
+* ✅ Number of active deployments (tracked anonymously or via opt-in ping)
+* ✅ Number of rules analyzed per session (indicates depth of use)
+* ✅ Accuracy of redundancy detection (measured via user feedback)
+* ✅ Reduction in rule count or complexity after applying suggestions (if tracked manually)
+* ✅ Positive feedback or NPS from security teams using the tool
+* ✅ Inbound inquiries from teams using Palo Alto firewalls

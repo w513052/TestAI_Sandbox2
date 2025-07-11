@@ -1,0 +1,228 @@
+## ✅ 1. Database Structure Overview
+
+### 🗂️ **Main Entities**
+
+| Entity             | Description                                                        |
+| ------------------ | ------------------------------------------------------------------ |
+| `AuditSession`     | Each analysis run of a Palo Alto config                            |
+| `FirewallRule`     | Parsed rule entries from the uploaded config                       |
+| `RuleIssue`        | Optimization issues found during analysis (e.g., unused, shadowed) |
+| `ObjectDefinition` | Address/service objects from the config                            |
+| `ObjectIssue`      | Optimization issues found for objects                              |
+| `Recommendation`   | Final recommendations linked to rules or objects                   |
+| `ReportFile`       | Metadata for exported reports (PDF/CSV/JSON)                       |
+
+### 🔗 **Relationships**
+
+* `AuditSession` → has many `FirewallRule`, `ObjectDefinition`, `Recommendation`, `ReportFile`
+* `FirewallRule` → has many `RuleIssue`
+* `ObjectDefinition` → has many `ObjectIssue`
+* `RuleIssue` / `ObjectIssue` → optionally linked to `Recommendation`
+
+### 🧠 **Rationale for SQLite**
+
+* No external dependencies (fits your privacy/local-only goals)
+* Great for read-heavy, small-moderate workloads
+* File-based, easy to reset/backup/export with session data
+* Can be replaced later with Postgres or another SQL DB if needed
+
+---
+
+## ✅ 2. Detailed Schema Design
+
+### 🔍 `AuditSession`
+
+| Field          | Type     | Notes                                          |
+| -------------- | -------- | ---------------------------------------------- |
+| `id`           | INTEGER  | PK, autoincrement                              |
+| `session_name` | TEXT     | Optional, user-labeled session                 |
+| `start_time`   | DATETIME | When analysis began                            |
+| `end_time`     | DATETIME | When analysis completed                        |
+| `filename`     | TEXT     | Original uploaded config filename              |
+| `file_hash`    | TEXT     | SHA256 hash for file integrity                 |
+| `metadata`     | JSON     | Additional info (firmware version, rule count) |
+
+**Indexes**: `file_hash`, `start_time`
+
+---
+
+### 🔥 `FirewallRule`
+
+| Field         | Type    | Notes                          |
+| ------------- | ------- | ------------------------------ |
+| `id`          | INTEGER | PK                             |
+| `audit_id`    | INTEGER | FK → `AuditSession(id)`        |
+| `rule_name`   | TEXT    | Original rule name from config |
+| `rule_type`   | TEXT    | e.g., `security`, `nat`, etc.  |
+| `src_zone`    | TEXT    | Source zone                    |
+| `dst_zone`    | TEXT    | Destination zone               |
+| `src`         | TEXT    | Source addresses               |
+| `dst`         | TEXT    | Destination addresses          |
+| `service`     | TEXT    | Service/application fields     |
+| `action`      | TEXT    | `allow`, `deny`, etc.          |
+| `position`    | INTEGER | Rule order in config           |
+| `is_disabled` | BOOLEAN | If rule is disabled in config  |
+| `raw_xml`     | TEXT    | Optional: original rule XML    |
+
+**Indexes**: `audit_id`, `rule_name`, `position`
+
+---
+
+### ⚠️ `RuleIssue`
+
+| Field         | Type    | Notes                                   |
+| ------------- | ------- | --------------------------------------- |
+| `id`          | INTEGER | PK                                      |
+| `rule_id`     | INTEGER | FK → `FirewallRule(id)`                 |
+| `issue_type`  | TEXT    | e.g., `shadowed`, `duplicate`, `unused` |
+| `description` | TEXT    | Human-readable explanation              |
+| `severity`    | TEXT    | `low`, `medium`, `high`                 |
+
+**Indexes**: `rule_id`, `issue_type`
+
+---
+
+### 🧱 `ObjectDefinition`
+
+| Field           | Type    | Notes                               |
+| --------------- | ------- | ----------------------------------- |
+| `id`            | INTEGER | PK                                  |
+| `audit_id`      | INTEGER | FK → `AuditSession(id)`             |
+| `object_type`   | TEXT    | `address`, `service`, `group`, etc. |
+| `name`          | TEXT    | Object name                         |
+| `value`         | TEXT    | CIDR, port range, etc.              |
+| `used_in_rules` | INTEGER | Count of rules where it appears     |
+| `raw_xml`       | TEXT    | Optional                            |
+
+**Indexes**: `audit_id`, `name`, `object_type`
+
+---
+
+### ⚠️ `ObjectIssue`
+
+| Field         | Type    | Notes                             |
+| ------------- | ------- | --------------------------------- |
+| `id`          | INTEGER | PK                                |
+| `object_id`   | INTEGER | FK → `ObjectDefinition(id)`       |
+| `issue_type`  | TEXT    | `unused`, `duplicate`, `shadowed` |
+| `description` | TEXT    |                                   |
+| `severity`    | TEXT    |                                   |
+
+---
+
+### 💡 `Recommendation`
+
+| Field              | Type    | Notes                                |
+| ------------------ | ------- | ------------------------------------ |
+| `id`               | INTEGER | PK                                   |
+| `audit_id`         | INTEGER | FK → `AuditSession(id)`              |
+| `linked_rule_id`   | INTEGER | Nullable FK → `FirewallRule(id)`     |
+| `linked_object_id` | INTEGER | Nullable FK → `ObjectDefinition(id)` |
+| `recommendation`   | TEXT    | Actionable suggestion                |
+| `category`         | TEXT    | Cleanup, Merge, Reorder, etc.        |
+
+---
+
+### 📄 `ReportFile`
+
+| Field          | Type     | Notes                    |
+| -------------- | -------- | ------------------------ |
+| `id`           | INTEGER  | PK                       |
+| `audit_id`     | INTEGER  | FK → `AuditSession(id)`  |
+| `format`       | TEXT     | `pdf`, `csv`, `json`     |
+| `filepath`     | TEXT     | Local path to saved file |
+| `generated_at` | DATETIME | When report was created  |
+
+---
+
+## ✅ 3. Sample Data
+
+### 🔍 `AuditSession`
+
+```json
+{
+  "id": 1,
+  "session_name": "July 2025 Audit",
+  "start_time": "2025-07-11T14:00:00Z",
+  "end_time": "2025-07-11T14:02:12Z",
+  "filename": "corp-fw-config.xml",
+  "file_hash": "abc123...",
+  "metadata": { "firmware": "10.2", "rule_count": 87 }
+}
+```
+
+### 🔥 `FirewallRule`
+
+```json
+{
+  "id": 101,
+  "audit_id": 1,
+  "rule_name": "Allow-Web-Traffic",
+  "rule_type": "security",
+  "src_zone": "trust",
+  "dst_zone": "untrust",
+  "src": "192.168.1.0/24",
+  "dst": "any",
+  "service": "web-browsing",
+  "action": "allow",
+  "position": 5,
+  "is_disabled": false
+}
+```
+
+### ⚠️ `RuleIssue`
+
+```json
+{
+  "id": 1,
+  "rule_id": 101,
+  "issue_type": "shadowed",
+  "description": "This rule is shadowed by rule #3 with broader match",
+  "severity": "medium"
+}
+```
+
+### 💡 `Recommendation`
+
+```json
+{
+  "id": 1,
+  "audit_id": 1,
+  "linked_rule_id": 101,
+  "recommendation": "Consider removing or reordering this rule due to shadowing.",
+  "category": "Reorder"
+}
+```
+
+---
+
+## ✅ 4. Database Migration Strategy
+
+### 📦 Initial Setup
+
+* Use SQLAlchemy or raw SQL scripts to create schema on first run
+* Package with tool installer (migrations run on app start if needed)
+
+### 🔄 Handling Schema Changes
+
+* Use lightweight migration tool like [Alembic](https://alembic.sqlalchemy.org/) if using SQLAlchemy
+* Track DB version in `metadata` table
+* Auto-migrate if minor changes, prompt user if data-breaking
+
+---
+
+## ✅ 5. Performance Considerations
+
+### 🔍 Query Optimization Tips
+
+* Always index `audit_id`, `rule_id`, and `name` fields
+* Use parameterized queries to avoid scanning large audit tables
+* Cache heavy parsing output in memory during analysis
+
+### ⚠️ Potential Bottlenecks
+
+| Bottleneck                | Solution                                         |
+| ------------------------- | ------------------------------------------------ |
+| Large XML parsing         | Use stream parsing (e.g., `xml.etree.iterparse`) |
+| Querying all rules/issues | Paginate, filter in UI                           |
+| Writing large reports     | Stream output to file, don’t buffer all          |
