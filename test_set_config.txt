@@ -1,0 +1,38 @@
+# Palo Alto Networks Set Format Configuration Test
+# This file tests set command parsing for firewall rules and objects
+
+# Address Objects
+set address "Server-Web-01" ip-netmask 192.168.10.10/32
+set address "Server-Web-02" ip-netmask 192.168.10.20/32
+set address "Server-DB-01" ip-netmask 192.168.20.10/32
+set address "Client-LAN-01" ip-netmask 192.168.1.0/24
+set address "Client-LAN-02" ip-netmask 192.168.2.0/24
+set address "DMZ-Host-01" ip-netmask 172.16.10.5/32
+set address "External-Server" fqdn external.example.com
+set address "Backup-Server" ip-netmask 192.168.50.10/32
+set address "Monitoring-Host" ip-netmask 192.168.60.5/32
+set address "Unused-Host-01" ip-netmask 10.0.0.1/32
+set address "Unused-Host-02" ip-netmask 10.0.0.2/32
+set address "Server-Web-01-Redundant" ip-netmask 192.168.10.10/32
+
+# Service Objects
+set service "HTTP-Custom" protocol tcp port 8080
+set service "HTTPS-Custom" protocol tcp port 8443
+set service "SSH-Custom" protocol tcp port 2222
+set service "MySQL-Custom" protocol tcp port 3306
+set service "Unused-Service-01" protocol tcp port 9999
+set service "Unused-Service-02" protocol udp port 5555
+
+# Security Rules
+set security rules "Allow-Web-Access" from trust to untrust source "Client-LAN-01" destination "Server-Web-01" service "HTTP-Custom" action allow
+set security rules "Allow-Web-Access-2" from trust to untrust source "Client-LAN-02" destination "Server-Web-02" service service-http action allow
+set security rules "Allow-DB-Access" from trust to dmz source "Server-Web-01" destination "Server-DB-01" service "MySQL-Custom" action allow
+set security rules "Allow-External-Access" from trust to untrust source "Client-LAN-01" destination "External-Server" service "HTTPS-Custom" action allow
+set security rules "Allow-DMZ-Access" from trust to dmz source any destination "DMZ-Host-01" service service-https action allow
+set security rules "Block-Unused-Rule-1" from any to any source any destination any service any action deny disabled yes
+set security rules "Block-Unused-Rule-2" from any to any source any destination any service any action deny disabled yes
+set security rules "Block-Unused-Rule-3" from any to any source any destination any service any action deny disabled yes
+set security rules "Duplicate-Rule-1" from trust to untrust source "Client-LAN-01" destination "Server-Web-01" service "HTTP-Custom" action allow
+set security rules "Duplicate-Rule-2" from trust to untrust source "Client-LAN-01" destination "Server-Web-01" service "HTTP-Custom" action allow
+set security rules "Shadow-Rule-1" from trust to untrust source "Client-LAN-01" destination "Server-Web-01" service service-http action allow
+set security rules "Deny-All" from any to any source any destination any service any action deny

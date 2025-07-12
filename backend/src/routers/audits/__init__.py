@@ -13,7 +13,8 @@ from src.utils.parse_config import (
     store_objects,
     analyze_object_usage,
     parse_rules_adaptive,
-    parse_objects_adaptive
+    parse_objects_adaptive,
+    analyze_rule_usage
 )
 from src.utils.logging import logger
 from datetime import datetime
@@ -368,26 +369,83 @@ async def get_audit_analysis(audit_id: int, db: Session = Depends(get_db)):
                 }
             )
 
-        # Get unused objects (objects with used_in_rules = 0)
-        unused_objects = db.query(ObjectDefinition).filter(
-            ObjectDefinition.audit_id == audit_id,
-            ObjectDefinition.used_in_rules == 0
-        ).all()
+        # Get all objects for this audit
+        all_objects = db.query(ObjectDefinition).filter(ObjectDefinition.audit_id == audit_id).all()
 
-        # Get used objects (objects with used_in_rules > 0)
-        used_objects = db.query(ObjectDefinition).filter(
-            ObjectDefinition.audit_id == audit_id,
-            ObjectDefinition.used_in_rules > 0
-        ).all()
+        # Categorize objects based on usage and redundancy
+        used_objects = []
+        unused_objects = []
+        redundant_objects = []
+
+        # Group objects by value to identify redundant ones
+        objects_by_value = {}
+        for obj in all_objects:
+            value = obj.value or ''
+            if value not in objects_by_value:
+                objects_by_value[value] = []
+            objects_by_value[value].append(obj)
+
+        # Categorize objects
+        for obj in all_objects:
+            if obj.used_in_rules > 0:
+                used_objects.append(obj)
+            else:
+                # Check if this is a redundant object (same value as a used object)
+                value = obj.value or ''
+                is_redundant = False
+
+                if value and value in objects_by_value:
+                    # Check if any other object with same value is used
+                    for other_obj in objects_by_value[value]:
+                        if other_obj.id != obj.id and other_obj.used_in_rules > 0:
+                            is_redundant = True
+                            break
+
+                if is_redundant:
+                    redundant_objects.append(obj)
+                else:
+                    unused_objects.append(obj)
 
         # Get all rules for this audit
         all_rules = db.query(FirewallRule).filter(FirewallRule.audit_id == audit_id).all()
 
-        # Get disabled rules
-        disabled_rules = db.query(FirewallRule).filter(
-            FirewallRule.audit_id == audit_id,
-            FirewallRule.is_disabled == True
-        ).all()
+        # Perform comprehensive rule analysis
+        try:
+            rule_analysis = analyze_rule_usage(audit_id)
+            logger.info(f"Rule analysis completed for audit {audit_id}")
+        except Exception as e:
+            logger.error(f"Rule analysis failed for audit {audit_id}: {str(e)}")
+            # Fallback to basic disabled rules analysis
+            rule_analysis = {
+                'unused_rules': [],
+                'duplicate_rules': [],
+                'shadowed_rules': [],
+                'overlapping_rules': []
+            }
+
+            # Get disabled rules as fallback "unused" rules
+            disabled_rules = db.query(FirewallRule).filter(
+                FirewallRule.audit_id == audit_id,
+                FirewallRule.is_disabled == True
+            ).all()
+
+            # Format disabled rules as unused rules
+            for rule in disabled_rules:
+                rule_analysis['unused_rules'].append({
+                    "id": rule.id,
+                    "name": rule.rule_name,
+                    "position": rule.position,
+                    "type": "disabled_rule",
+                    "src_zone": rule.src_zone,
+                    "dst_zone": rule.dst_zone,
+                    "src": rule.src,
+                    "dst": rule.dst,
+                    "service": rule.service,
+                    "action": rule.action,
+                    "severity": "low",
+                    "description": f"Rule '{rule.rule_name}' is disabled and will not process traffic",
+                    "recommendation": f"Consider removing disabled rule '{rule.rule_name}' if no longer needed"
+                })
 
         # Format unused objects for frontend
         unused_objects_data = []
@@ -402,17 +460,17 @@ async def get_audit_analysis(audit_id: int, db: Session = Depends(get_db)):
                 "description": f"Object '{obj.name}' is not referenced by any rules"
             })
 
-        # Format disabled rules for frontend
-        disabled_rules_data = []
-        for rule in disabled_rules:
-            disabled_rules_data.append({
-                "id": rule.id,
-                "name": rule.rule_name,
-                "type": rule.rule_type,
-                "position": rule.position,
-                "action": rule.action,
-                "severity": "low",  # Disabled rules are typically low severity
-                "description": f"Rule '{rule.rule_name}' is disabled and will not process traffic"
+        # Format redundant objects for frontend
+        redundant_objects_data = []
+        for obj in redundant_objects:
+            redundant_objects_data.append({
+                "id": obj.id,
+                "name": obj.name,
+                "type": obj.object_type,
+                "value": obj.value,
+                "used_in_rules": obj.used_in_rules,
+                "severity": "low",  # Lower severity for redundant objects
+                "description": f"Object '{obj.name}' has the same value as another used object and is redundant"
             })
 
         analysis_data = {
@@ -420,19 +478,27 @@ async def get_audit_analysis(audit_id: int, db: Session = Depends(get_db)):
             "session_name": session.session_name,
             "analysis_summary": {
                 "total_rules": len(all_rules),
-                "total_objects": len(unused_objects) + len(used_objects),
+                "total_objects": len(all_objects),
                 "unused_objects_count": len(unused_objects),
                 "used_objects_count": len(used_objects),
-                "disabled_rules_count": len(disabled_rules)
+                "redundant_objects_count": len(redundant_objects),
+                "disabled_rules_count": len([r for r in rule_analysis['unused_rules'] if r.get('type') == 'disabled_rule'])
             },
             "unusedObjects": unused_objects_data,
-            "unusedRules": disabled_rules_data,  # For now, treat disabled rules as "unused"
-            "duplicateRules": [],  # TODO: Implement duplicate detection
-            "shadowedRules": [],   # TODO: Implement shadow rule detection
-            "overlappingRules": [] # TODO: Implement overlapping rule detection
+            "redundantObjects": redundant_objects_data,
+            "unusedRules": rule_analysis['unused_rules'],
+            "duplicateRules": rule_analysis['duplicate_rules'],
+            "shadowedRules": rule_analysis['shadowed_rules'],
+            "overlappingRules": rule_analysis['overlapping_rules']
         }
 
-        logger.info(f"Analysis completed for audit {audit_id}: {len(unused_objects)} unused objects, {len(disabled_rules)} disabled rules")
+        logger.info(f"Analysis completed for audit {audit_id}: "
+                   f"{len(unused_objects)} unused objects, "
+                   f"{len(redundant_objects)} redundant objects, "
+                   f"{len(rule_analysis['unused_rules'])} unused rules, "
+                   f"{len(rule_analysis['duplicate_rules'])} duplicate rules, "
+                   f"{len(rule_analysis['shadowed_rules'])} shadowed rules, "
+                   f"{len(rule_analysis['overlapping_rules'])} overlapping rules")
 
         return {
             "status": "success",

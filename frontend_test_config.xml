@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config version="10.1.0" urldb="paloaltonetworks">
+  <devices>
+    <entry name="localhost.localdomain">
+      <deviceconfig>
+        <system>
+          <version>10.1.0</version>
+          <hostname>PA-VM-FRONTEND-TEST</hostname>
+        </system>
+      </deviceconfig>
+      <vsys>
+        <entry name="vsys1">
+          <address>
+            <entry name="Server-Web1">
+              <ip-netmask>192.168.10.10/32</ip-netmask>
+            </entry>
+            <entry name="Server-Web2">
+              <ip-netmask>192.168.10.20/32</ip-netmask>
+            </entry>
+            <entry name="Client-LAN1">
+              <ip-netmask>192.168.1.0/24</ip-netmask>
+            </entry>
+            <entry name="Client-LAN2">
+              <ip-netmask>192.168.2.0/24</ip-netmask>
+            </entry>
+            <entry name="Unused-Host1">
+              <ip-netmask>10.0.0.1/32</ip-netmask>
+            </entry>
+            <entry name="Unused-Host2">
+              <ip-netmask>10.0.0.2/32</ip-netmask>
+            </entry>
+            <entry name="Unused-Host3">
+              <ip-netmask>10.0.0.3/32</ip-netmask>
+            </entry>
+            <entry name="Unused-Host4">
+              <ip-netmask>10.0.0.4/32</ip-netmask>
+            </entry>
+            <entry name="Unused-Host5">
+              <ip-netmask>10.0.0.5/32</ip-netmask>
+            </entry>
+            <entry name="Unused-Host6">
+              <ip-netmask>10.0.0.6/32</ip-netmask>
+            </entry>
+          </address>
+          <rulebase>
+            <security>
+              <rules>
+                <entry name="Allow-Web-Access">
+                  <from>
+                    <member>trust</member>
+                  </from>
+                  <to>
+                    <member>untrust</member>
+                  </to>
+                  <source>
+                    <member>Client-LAN1</member>
+                  </source>
+                  <destination>
+                    <member>Server-Web1</member>
+                  </destination>
+                  <service>
+                    <member>service-http</member>
+                  </service>
+                  <action>allow</action>
+                </entry>
+                <entry name="Allow-Web2-Access">
+                  <from>
+                    <member>trust</member>
+                  </from>
+                  <to>
+                    <member>untrust</member>
+                  </to>
+                  <source>
+                    <member>Client-LAN2</member>
+                  </source>
+                  <destination>
+                    <member>Server-Web2</member>
+                  </destination>
+                  <service>
+                    <member>service-http</member>
+                  </service>
+                  <action>allow</action>
+                </entry>
+                <entry name="Block-Rule-1">
+                  <from>
+                    <member>any</member>
+                  </from>
+                  <to>
+                    <member>any</member>
+                  </to>
+                  <source>
+                    <member>any</member>
+                  </source>
+                  <destination>
+                    <member>any</member>
+                  </destination>
+                  <service>
+                    <member>any</member>
+                  </service>
+                  <action>deny</action>
+                  <disabled>yes</disabled>
+                </entry>
+                <entry name="Block-Rule-2">
+                  <from>
+                    <member>any</member>
+                  </from>
+                  <to>
+                    <member>any</member>
+                  </to>
+                  <source>
+                    <member>any</member>
+                  </source>
+                  <destination>
+                    <member>any</member>
+                  </destination>
+                  <service>
+                    <member>any</member>
+                  </service>
+                  <action>deny</action>
+                  <disabled>yes</disabled>
+                </entry>
+                <entry name="Block-Rule-3">
+                  <from>
+                    <member>any</member>
+                  </from>
+                  <to>
+                    <member>any</member>
+                  </to>
+                  <source>
+                    <member>any</member>
+                  </source>
+                  <destination>
+                    <member>any</member>
+                  </destination>
+                  <service>
+                    <member>any</member>
+                  </service>
+                  <action>deny</action>
+                  <disabled>yes</disabled>
+                </entry>
+                <entry name="Block-Rule-4">
+                  <from>
+                    <member>any</member>
+                  </from>
+                  <to>
+                    <member>any</member>
+                  </to>
+                  <source>
+                    <member>any</member>
+                  </source>
+                  <destination>
+                    <member>any</member>
+                  </destination>
+                  <service>
+                    <member>any</member>
+                  </service>
+                  <action>deny</action>
+                  <disabled>yes</disabled>
+                </entry>
+                <entry name="Block-Rule-5">
+                  <from>
+                    <member>any</member>
+                  </from>
+                  <to>
+                    <member>any</member>
+                  </to>
+                  <source>
+                    <member>any</member>
+                  </source>
+                  <destination>
+                    <member>any</member>
+                  </destination>
+                  <service>
+                    <member>any</member>
+                  </service>
+                  <action>deny</action>
+                  <disabled>yes</disabled>
+                </entry>
+                <entry name="Block-Rule-6">
+                  <from>
+                    <member>any</member>
+                  </from>
+                  <to>
+                    <member>any</member>
+                  </to>
+                  <source>
+                    <member>any</member>
+                  </source>
+                  <destination>
+                    <member>any</member>
+                  </destination>
+                  <service>
+                    <member>any</member>
+                  </service>
+                  <action>deny</action>
+                  <disabled>yes</disabled>
+                </entry>
+                <entry name="Block-Rule-7">
+                  <from>
+                    <member>any</member>
+                  </from>
+                  <to>
+                    <member>any</member>
+                  </to>
+                  <source>
+                    <member>any</member>
+                  </source>
+                  <destination>
+                    <member>any</member>
+                  </destination>
+                  <service>
+                    <member>any</member>
+                  </service>
+                  <action>deny</action>
+                  <disabled>yes</disabled>
+                </entry>
+                <entry name="Block-Rule-8">
+                  <from>
+                    <member>any</member>
+                  </from>
+                  <to>
+                    <member>any</member>
+                  </to>
+                  <source>
+                    <member>any</member>
+                  </source>
+                  <destination>
+                    <member>any</member>
+                  </destination>
+                  <service>
+                    <member>any</member>
+                  </service>
+                  <action>deny</action>
+                  <disabled>yes</disabled>
+                </entry>
+              </rules>
+            </security>
+          </rulebase>
+        </entry>
+      </vsys>
+    </entry>
+  </devices>
+</config>

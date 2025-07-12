@@ -7,6 +7,10 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ data, fileName }) => {
+  // Debug logging
+  console.log('🖥️ Dashboard received data:', data);
+  console.log('📋 Dashboard summary:', data?.summary);
+
   const { summary, recommendations } = data;
 
   const metrics = [

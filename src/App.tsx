@@ -11,6 +11,9 @@ function App() {
   const [fileName, setFileName] = useState('');
 
   const handleFileAnalysis = (data: any, name: string) => {
+    console.log('🚀 App received analysis data:', data);
+    console.log('📁 File name:', name);
+
     setAnalysisData(data);
     setFileName(name);
     setCurrentView('dashboard');

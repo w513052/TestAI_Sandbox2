@@ -323,13 +323,13 @@ def parse_set_rule(line: str, position: int) -> Dict[str, Any]:
 
         rule_name = name_match.group(1).strip()
 
-        # Extract rule attributes using regex patterns
-        from_match = re.search(r'from ([^\s]+)', line)
-        to_match = re.search(r'to ([^\s]+)', line)
-        source_match = re.search(r'source ([^\s]+)', line)
-        dest_match = re.search(r'destination ([^\s]+)', line)
-        service_match = re.search(r'service ([^\s]+)', line)
-        action_match = re.search(r'action ([^\s]+)', line)
+        # Extract rule attributes using regex patterns that handle quoted values
+        from_match = re.search(r'from (["\']?)([^"\'\s]+)\1', line)
+        to_match = re.search(r'to (["\']?)([^"\'\s]+)\1', line)
+        source_match = re.search(r'source (["\']?)([^"\'\s]+)\1', line)
+        dest_match = re.search(r'destination (["\']?)([^"\'\s]+)\1', line)
+        service_match = re.search(r'service (["\']?)([^"\'\s]+)\1', line)
+        action_match = re.search(r'action (["\']?)([^"\'\s]+)\1', line)
 
         # Check if rule is disabled
         is_disabled = 'disabled yes' in line or 'disable' in line
@@ -337,12 +337,12 @@ def parse_set_rule(line: str, position: int) -> Dict[str, Any]:
         rule_data = {
             "rule_name": rule_name,
             "rule_type": "security",
-            "src_zone": from_match.group(1) if from_match else "any",
-            "dst_zone": to_match.group(1) if to_match else "any",
-            "src": source_match.group(1) if source_match else "any",
-            "dst": dest_match.group(1) if dest_match else "any",
-            "service": service_match.group(1) if service_match else "any",
-            "action": action_match.group(1) if action_match else "allow",
+            "src_zone": from_match.group(2) if from_match else "any",
+            "dst_zone": to_match.group(2) if to_match else "any",
+            "src": source_match.group(2) if source_match else "any",
+            "dst": dest_match.group(2) if dest_match else "any",
+            "service": service_match.group(2) if service_match else "any",
+            "action": action_match.group(2) if action_match else "allow",
             "position": position,
             "is_disabled": is_disabled,
             "raw_xml": line  # Store original set command
@@ -614,6 +614,7 @@ def store_objects(db_session, audit_id: int, objects_data: List[Dict[str, Any]])
 def analyze_object_usage(rules_data: List[Dict[str, Any]], objects_data: List[Dict[str, Any]]) -> Dict[str, int]:
     """
     Analyze which objects are used in rules and update usage counts.
+    Also identifies redundant objects (same value as used objects).
 
     Args:
         rules_data: List of parsed rules
@@ -648,17 +649,50 @@ def analyze_object_usage(rules_data: List[Dict[str, Any]], objects_data: List[Di
             if service in object_names:
                 object_usage[service] += 1
 
+        # Identify redundant objects (same value as used objects)
+        # Group objects by value
+        objects_by_value = {}
+        for obj in objects_data:
+            value = obj.get('value', '')
+            if value and value != '':
+                if value not in objects_by_value:
+                    objects_by_value[value] = []
+                objects_by_value[value].append(obj)
+
+        # For each group of objects with the same value, if any are used, mark redundant ones as "indirectly used"
+        for value, obj_group in objects_by_value.items():
+            if len(obj_group) > 1:  # Multiple objects with same value
+                # Check if any object in this group is directly used
+                directly_used = any(object_usage.get(obj.get('name', ''), 0) > 0 for obj in obj_group)
+
+                if directly_used:
+                    # Mark unused objects in this group as "redundant" (indirectly used)
+                    for obj in obj_group:
+                        obj_name = obj.get('name', '')
+                        if object_usage.get(obj_name, 0) == 0:
+                            # Mark as indirectly used (redundant)
+                            object_usage[obj_name] = -1  # Special marker for redundant objects
+                            logger.debug(f"Object '{obj_name}' marked as redundant (same value as used object)")
+
         # Update objects_data with usage counts
         for obj in objects_data:
             obj_name = obj.get('name', '')
             if obj_name in object_usage:
-                obj['used_in_rules'] = object_usage[obj_name]
+                usage_count = object_usage[obj_name]
+                if usage_count == -1:
+                    # Redundant object - set to 0 for database but mark as special
+                    obj['used_in_rules'] = 0
+                    obj['is_redundant'] = True
+                else:
+                    obj['used_in_rules'] = usage_count
+                    obj['is_redundant'] = False
 
         # Log usage statistics
-        used_objects = sum(1 for count in object_usage.values() if count > 0)
-        unused_objects = len(object_usage) - used_objects
+        directly_used = sum(1 for count in object_usage.values() if count > 0)
+        redundant = sum(1 for count in object_usage.values() if count == -1)
+        truly_unused = len(object_usage) - directly_used - redundant
 
-        logger.info(f"Object usage analysis completed: {used_objects} used, {unused_objects} unused objects")
+        logger.info(f"Object usage analysis completed: {directly_used} used, {redundant} redundant, {truly_unused} unused objects")
 
         return object_usage
 
@@ -1035,3 +1069,80 @@ def parse_objects_adaptive(xml_content: bytes, force_streaming: bool = False) ->
                 raise ValueError(f"Both streaming and regular parsers failed: {str(e)}")
         else:
             raise ValueError(f"Failed to parse objects: {str(e)}")
+
+def analyze_rule_usage(audit_id: int) -> Dict[str, Any]:
+    """
+    Analyze rules for various issues including unused, duplicate, shadowed, and overlapping rules.
+
+    Args:
+        audit_id: The audit session ID
+
+    Returns:
+        Dictionary containing analysis results
+    """
+    try:
+        import sqlite3
+        from .rule_analysis import analyze_rules
+
+        logger.info(f"Starting rule usage analysis for audit {audit_id}")
+
+        # Get all rules for this audit
+        conn = sqlite3.connect('firewall_tool.db')
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, rule_name, rule_type, src_zone, dst_zone, src, dst, service,
+                   action, position, is_disabled, raw_xml
+            FROM firewall_rules
+            WHERE audit_id = ?
+            ORDER BY position
+        """, (audit_id,))
+
+        rules = []
+        for row in cursor.fetchall():
+            rule = {
+                'id': row[0],
+                'rule_name': row[1],
+                'rule_type': row[2],
+                'src_zone': row[3],
+                'dst_zone': row[4],
+                'src': row[5],
+                'dst': row[6],
+                'service': row[7],
+                'action': row[8],
+                'position': row[9],
+                'is_disabled': bool(row[10]),
+                'raw_xml': row[11]
+            }
+            rules.append(rule)
+
+        conn.close()
+
+        if not rules:
+            logger.warning(f"No rules found for audit {audit_id}")
+            return {
+                'unused_rules': [],
+                'duplicate_rules': [],
+                'shadowed_rules': [],
+                'overlapping_rules': []
+            }
+
+        # Perform rule analysis
+        analysis_result = analyze_rules(rules)
+
+        logger.info(f"Rule analysis completed for audit {audit_id}: "
+                   f"{len(analysis_result.unused_rules)} unused, "
+                   f"{len(analysis_result.duplicate_rules)} duplicate, "
+                   f"{len(analysis_result.shadowed_rules)} shadowed, "
+                   f"{len(analysis_result.overlapping_rules)} overlapping")
+
+        return {
+            'unused_rules': analysis_result.unused_rules,
+            'duplicate_rules': analysis_result.duplicate_rules,
+            'shadowed_rules': analysis_result.shadowed_rules,
+            'overlapping_rules': analysis_result.overlapping_rules
+        }
+
+    except Exception as e:
+        logger.error(f"Error in rule usage analysis: {str(e)}")
+        raise ValueError(f"Failed to analyze rule usage: {str(e)}")

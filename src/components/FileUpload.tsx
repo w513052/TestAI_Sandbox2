@@ -240,6 +240,12 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileAnalysis }) => {
       };
 
       setIsAnalyzing(false);
+
+      // Debug logging
+      console.log('🎯 Frontend Analysis Data:', frontendAnalysisData);
+      console.log('📊 Summary:', frontendAnalysisData.summary);
+      console.log('📦 Unused Objects:', frontendAnalysisData.unusedObjects);
+
       onFileAnalysis(frontendAnalysisData, file.name);
     } catch (error) {
       console.error('File upload failed:', error);
