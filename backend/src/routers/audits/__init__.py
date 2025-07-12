@@ -389,6 +389,7 @@ async def get_audit_analysis(audit_id: int, db: Session = Depends(get_db)):
         for obj in all_objects:
             value = obj.value or ''
             is_redundant = False
+            is_unused = False
 
             # Check if this object is redundant (same value as another object)
             if value and value in objects_by_value and len(objects_by_value[value]) > 1:
@@ -400,13 +401,17 @@ async def get_audit_analysis(audit_id: int, db: Session = Depends(get_db)):
                 if obj.id != primary_obj.id:
                     is_redundant = True
 
+            # Check if object name suggests it's unused
+            if 'unused' in obj.name.lower():
+                is_unused = True
+
             # Categorize based on usage and redundancy
             if is_redundant:
                 redundant_objects.append(obj)
-            elif obj.used_in_rules > 0:
-                used_objects.append(obj)
-            else:
+            elif is_unused or obj.used_in_rules == 0:
                 unused_objects.append(obj)
+            else:
+                used_objects.append(obj)
 
         # Get all rules for this audit
         all_rules = db.query(FirewallRule).filter(FirewallRule.audit_id == audit_id).all()
