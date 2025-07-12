@@ -208,14 +208,14 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileAnalysis }) => {
 
       const frontendAnalysisData = {
         summary: {
-          totalRules: result.data.metadata.rules_parsed || 0,
-          totalObjects: totalObjects,
+          totalRules: analysisData.analysis_summary?.total_rules || 0,
+          totalObjects: analysisData.analysis_summary?.total_objects || totalObjects,
           duplicateRules: analysisData.duplicateRules?.length || 0,
           shadowedRules: analysisData.shadowedRules?.length || 0,
           unusedRules: analysisData.unusedRules?.length || 0,
           overlappingRules: analysisData.overlappingRules?.length || 0,
           unusedObjects: analysisData.unusedObjects?.length || 0,
-          redundantObjects: 0, // TODO: Implement in backend
+          redundantObjects: analysisData.redundantObjects?.length || 0,
           analysisDate: result.data.start_time,
           configVersion: result.data.metadata.firmware_version || 'Unknown',
           auditId: result.data.audit_id,
@@ -228,12 +228,13 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileAnalysis }) => {
         unusedRules: analysisData.unusedRules || [],
         overlappingRules: analysisData.overlappingRules || [],
         unusedObjects: analysisData.unusedObjects || [],
+        redundantObjects: analysisData.redundantObjects || [],
         recommendations: [
           {
             category: 'parsing',
             priority: 'info',
-            title: `Successfully parsed ${result.data.metadata.rules_parsed} rules and ${totalObjects} objects`,
-            description: `Found ${analysisData.unusedObjects?.length || 0} unused objects and ${analysisData.unusedRules?.length || 0} unused rules`,
+            title: `Successfully parsed ${analysisData.analysis_summary?.total_rules || 0} rules and ${analysisData.analysis_summary?.total_objects || totalObjects} objects`,
+            description: `Found ${analysisData.unusedObjects?.length || 0} unused objects, ${analysisData.redundantObjects?.length || 0} redundant objects, and ${analysisData.unusedRules?.length || 0} unused rules`,
             impact: 'Analysis completed - review findings for optimization opportunities'
           }
         ]
