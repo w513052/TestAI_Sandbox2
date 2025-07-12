@@ -1,0 +1,24 @@
+# Palo Alto Set Format Configuration Test File
+# Address Objects
+set address "Server-1" ip-netmask 192.168.1.100/32
+set address "Network-DMZ" ip-netmask 10.0.1.0/24
+set address "Web-Server" fqdn www.example.com
+set address "Mail-Server" ip-netmask 192.168.1.200/32
+set address "Internal-Network" ip-netmask 192.168.0.0/16
+
+# Service Objects
+set service "HTTP-Custom" protocol tcp port 8080
+set service "SSH-Custom" protocol tcp port 2222
+set service "HTTPS-Alt" protocol tcp port 8443
+set service "DNS-Custom" protocol udp port 5353
+
+# Security Rules
+set security rules "Allow-Web-Traffic" from trust to untrust source any destination "Web-Server" service service-http action allow
+set security rules "Block-SSH" from untrust to trust source any destination "Server-1" service service-ssh action deny
+set security rules "Allow-Internal-HTTP" from trust to dmz source "Internal-Network" destination "Network-DMZ" service "HTTP-Custom" action allow
+set security rules "Allow-Mail" from trust to untrust source any destination "Mail-Server" service service-smtp action allow
+set security rules "Disabled-Rule" from trust to dmz source any destination "Network-DMZ" service "HTTPS-Alt" action allow disabled yes
+
+# Additional test rules
+set rulebase security rules "Alternative-Format" from trust to untrust source any destination any service any action allow
+set security rules "Complex Rule" from trust to untrust source "Internal-Network" destination "Web-Server" service "HTTP-Custom" action allow

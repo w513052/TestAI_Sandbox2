@@ -3,11 +3,12 @@ from sqlalchemy.orm import Session
 from src.database import get_db
 from src.models import AuditSession, FirewallRule, ObjectDefinition
 from src.utils.parse_config import (
-    validate_xml_file, 
-    compute_file_hash, 
-    parse_rules, 
-    parse_objects, 
-    parse_metadata
+    validate_xml_file,
+    compute_file_hash,
+    parse_rules,
+    parse_objects,
+    parse_metadata,
+    parse_set_config
 )
 from src.utils.logging import logger
 from datetime import datetime
@@ -86,10 +87,22 @@ async def create_audit_session(
                 objects_data = parse_objects(file_content)
                 config_metadata = parse_metadata(file_content)
             else:
-                # TODO: Implement set format parsing in next task
-                rules_data = []
-                objects_data = []
-                config_metadata = {}
+                # Parse set format configuration
+                logger.info(f"Processing set format file: {file.content_type}")
+                try:
+                    set_content = file_content.decode('utf-8')
+                    logger.info(f"Decoded set content, length: {len(set_content)} characters")
+                    rules_data, objects_data, config_metadata = parse_set_config(set_content)
+                    logger.info(f"Set format parsing completed: {len(rules_data)} rules, {len(objects_data)} objects")
+                except UnicodeDecodeError:
+                    logger.error("Failed to decode set format file as UTF-8")
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "error_code": "ENCODING_ERROR",
+                            "message": "Set format file must be UTF-8 encoded"
+                        }
+                    )
                 
         except ValueError as e:
             logger.error(f"Parsing failed: {str(e)}")

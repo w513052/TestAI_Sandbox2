@@ -250,3 +250,189 @@ def parse_metadata(xml_content: bytes) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error parsing metadata: {str(e)}")
         return {}
+
+def parse_set_config(set_content: str) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    Parse Palo Alto set-format configuration files.
+
+    Args:
+        set_content: Raw set-format content as string
+
+    Returns:
+        Tuple of (rules_data, objects_data, metadata)
+    """
+    try:
+        lines = set_content.strip().split('\n')
+        rules_data = []
+        objects_data = []
+        metadata = {"firmware_version": "unknown", "rule_count": 0, "address_object_count": 0, "service_object_count": 0}
+
+        rule_position = 1
+
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+
+            # Parse security rules
+            if line.startswith('set security rules') or line.startswith('set rulebase security rules'):
+                rule_data = parse_set_rule(line, rule_position)
+                if rule_data:
+                    rules_data.append(rule_data)
+                    rule_position += 1
+
+            # Parse address objects
+            elif line.startswith('set address'):
+                obj_data = parse_set_address_object(line)
+                if obj_data:
+                    objects_data.append(obj_data)
+
+            # Parse service objects
+            elif line.startswith('set service'):
+                obj_data = parse_set_service_object(line)
+                if obj_data:
+                    objects_data.append(obj_data)
+
+        # Update metadata counts
+        metadata["rule_count"] = len(rules_data)
+        metadata["address_object_count"] = len([obj for obj in objects_data if obj["object_type"] == "address"])
+        metadata["service_object_count"] = len([obj for obj in objects_data if obj["object_type"] == "service"])
+
+        logger.info(f"Parsed {len(rules_data)} security rules from set format")
+        logger.info(f"Parsed {len(objects_data)} objects from set format")
+
+        return rules_data, objects_data, metadata
+
+    except Exception as e:
+        logger.error(f"Error parsing set config: {str(e)}")
+        raise ValueError(f"Failed to parse set config: {str(e)}")
+
+def parse_set_rule(line: str, position: int) -> Dict[str, Any]:
+    """
+    Parse a single set security rule command.
+
+    Example: set security rules "Allow-Web" from trust to untrust source any destination any service service-http action allow
+    """
+    try:
+        import re
+
+        # Extract rule name (quoted or unquoted)
+        name_match = re.search(r'set (?:rulebase )?security rules ["\']?([^"\']+)["\']?', line)
+        if not name_match:
+            return {}
+
+        rule_name = name_match.group(1).strip()
+
+        # Extract rule attributes using regex patterns
+        from_match = re.search(r'from ([^\s]+)', line)
+        to_match = re.search(r'to ([^\s]+)', line)
+        source_match = re.search(r'source ([^\s]+)', line)
+        dest_match = re.search(r'destination ([^\s]+)', line)
+        service_match = re.search(r'service ([^\s]+)', line)
+        action_match = re.search(r'action ([^\s]+)', line)
+
+        # Check if rule is disabled
+        is_disabled = 'disabled yes' in line or 'disable' in line
+
+        rule_data = {
+            "rule_name": rule_name,
+            "rule_type": "security",
+            "src_zone": from_match.group(1) if from_match else "any",
+            "dst_zone": to_match.group(1) if to_match else "any",
+            "src": source_match.group(1) if source_match else "any",
+            "dst": dest_match.group(1) if dest_match else "any",
+            "service": service_match.group(1) if service_match else "any",
+            "action": action_match.group(1) if action_match else "allow",
+            "position": position,
+            "is_disabled": is_disabled,
+            "raw_xml": line  # Store original set command
+        }
+
+        return rule_data
+
+    except Exception as e:
+        logger.error(f"Error parsing set rule: {line} - {str(e)}")
+        return {}
+
+def parse_set_address_object(line: str) -> Dict[str, Any]:
+    """
+    Parse a set address object command.
+
+    Examples:
+    - set address "Server-1" ip-netmask 192.168.1.100/32
+    - set address "Web-Server" fqdn www.example.com
+    """
+    try:
+        import re
+
+        # Extract object name
+        name_match = re.search(r'set address ["\']?([^"\']+)["\']?', line)
+        if not name_match:
+            return {}
+
+        name = name_match.group(1).strip()
+
+        # Extract value (ip-netmask or fqdn)
+        value = ""
+        if 'ip-netmask' in line:
+            ip_match = re.search(r'ip-netmask ([^\s]+)', line)
+            if ip_match:
+                value = ip_match.group(1)
+        elif 'fqdn' in line:
+            fqdn_match = re.search(r'fqdn ([^\s]+)', line)
+            if fqdn_match:
+                value = fqdn_match.group(1)
+
+        return {
+            "object_type": "address",
+            "name": name,
+            "value": value,
+            "used_in_rules": 0,
+            "raw_xml": line
+        }
+
+    except Exception as e:
+        logger.error(f"Error parsing set address object: {line} - {str(e)}")
+        return {}
+
+def parse_set_service_object(line: str) -> Dict[str, Any]:
+    """
+    Parse a set service object command.
+
+    Example: set service "HTTP-Custom" protocol tcp port 8080
+    """
+    try:
+        import re
+
+        # Extract object name
+        name_match = re.search(r'set service ["\']?([^"\']+)["\']?', line)
+        if not name_match:
+            return {}
+
+        name = name_match.group(1).strip()
+
+        # Extract protocol and port
+        protocol = ""
+        port = ""
+
+        protocol_match = re.search(r'protocol ([^\s]+)', line)
+        if protocol_match:
+            protocol = protocol_match.group(1)
+
+        port_match = re.search(r'port ([^\s]+)', line)
+        if port_match:
+            port = port_match.group(1)
+
+        value = f"{protocol}/{port}" if protocol and port else protocol or port
+
+        return {
+            "object_type": "service",
+            "name": name,
+            "value": value,
+            "used_in_rules": 0,
+            "raw_xml": line
+        }
+
+    except Exception as e:
+        logger.error(f"Error parsing set service object: {line} - {str(e)}")
+        return {}
