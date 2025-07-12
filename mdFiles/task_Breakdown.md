@@ -49,17 +49,17 @@ The Local Rule Set Parsing feature involves uploading a Palo Alto firewall confi
 Below is a detailed markdown list of 1-story-point tasks for implementing the Local Rule Set Parsing feature. Each task is designed to be a small, self-contained unit of work that an AI coding agent can complete independently, with clear instructions and references to the provided documents.
 
 1. **Create File Upload Endpoint**
-   - [ ] Create a FastAPI endpoint `POST /api/v1/audits` in `src/routers/audits/__init__.py` to handle file uploads, as specified in AIDesign.txt.
-   - [ ] Configure the endpoint to accept a multipart/form-data request with a file parameter (Palo Alto config file) and an optional `session_name` string, per AIDesign.txt.
-   - [ ] Validate that the uploaded file has a content type of `application/xml` or `text/plain` (for set format), raising a 400 HTTPException for invalid formats, as per AIDesign.txt.
-   - [ ] Compute a SHA256 hash of the uploaded file content using Python’s `hashlib` library and include it in the response, per DBSchema.txt.
-   - [ ] Return a JSON response with `status`, `data` (including `audit_id`, `session_name`, `start_time`, `filename`, `file_hash`, `metadata`), and `message`, matching the example in AIDesign.txt.
+   - [x] Create a FastAPI endpoint `POST /api/v1/audits` in `src/routers/audits/__init__.py` to handle file uploads, as specified in AIDesign.txt.
+   - [x] Configure the endpoint to accept a multipart/form-data request with a file parameter (Palo Alto config file) and an optional `session_name` string, per AIDesign.txt.
+   - [x] Validate that the uploaded file has a content type of `application/xml` or `text/plain` (for set format), raising a 400 HTTPException for invalid formats, as per AIDesign.txt.
+   - [x] Compute a SHA256 hash of the uploaded file content using Python’s `hashlib` library and include it in the response, per DBSchema.txt.
+   - [x] Return a JSON response with `status`, `data` (including `audit_id`, `session_name`, `start_time`, `filename`, `file_hash`, `metadata`), and `message`, matching the example in AIDesign.txt.
 
 2. **Implement XML File Validation**
-   - [ ] Add a utility function in `src/utils/parse_config.py` to validate the XML file structure before parsing, ensuring it contains a `<config>` root element, as typical for Palo Alto configs.
-   - [ ] Check for XML syntax errors using `lxml.etree`’s `fromstring` method with a try-except block, raising a ValueError with a descriptive message for invalid XML, per Backend.txt.
-   - [ ] Log validation success or failure to `~/firewall-opt-tool/logs/app.log` using the logging setup from Backend.txt.
-   - [ ] Return a 400 HTTPException with a detailed error message if validation fails, as specified in AIDesign.txt.
+   - [x] Add a utility function in `src/utils/parse_config.py` to validate the XML file structure before parsing, ensuring it contains a `<config>` root element, as typical for Palo Alto configs.
+   - [x] Check for XML syntax errors using `lxml.etree`’s `fromstring` method with a try-except block, raising a ValueError with a descriptive message for invalid XML, per Backend.txt.
+   - [x] Log validation success or failure to `~/firewall-opt-tool/logs/app.log` using the logging setup from Backend.txt.
+   - [x] Return a 400 HTTPException with a detailed error message if validation fails, as specified in AIDesign.txt.
 
 3. **Parse XML Rules**
    - [ ] Create a function `parse_rules` in `src/utils/parse_config.py` to extract security rules from the XML config using `lxml.etree`, targeting the `//security/rules/entry` XPath, per Backend.txt.
