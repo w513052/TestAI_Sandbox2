@@ -436,3 +436,143 @@ def parse_set_service_object(line: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error parsing set service object: {line} - {str(e)}")
         return {}
+
+def store_rules(db_session, audit_id: int, rules_data: List[Dict[str, Any]]) -> int:
+    """
+    Store parsed rules to the FirewallRule table with batch operations.
+
+    Args:
+        db_session: SQLAlchemy database session
+        audit_id: ID of the audit session
+        rules_data: List of dictionaries containing rule data
+
+    Returns:
+        int: Number of rules successfully stored
+
+    Raises:
+        ValueError: If required fields are missing
+        Exception: For database errors
+    """
+    if not rules_data:
+        logger.info("No rules to store")
+        return 0
+
+    try:
+        from src.models import FirewallRule
+
+        # Validate and prepare rules for batch insert
+        validated_rules = []
+        for i, rule_data in enumerate(rules_data):
+            try:
+                # Validate required fields
+                required_fields = ['rule_name', 'rule_type', 'position']
+                for field in required_fields:
+                    if field not in rule_data:
+                        logger.error(f"Missing required field '{field}' in rule {i}")
+                        continue
+
+                # Prepare rule data with audit_id
+                rule_record = {
+                    'audit_id': audit_id,
+                    'rule_name': rule_data.get('rule_name', f'rule_{i}')[:255],  # Truncate if too long
+                    'rule_type': rule_data.get('rule_type', 'security')[:50],
+                    'src_zone': rule_data.get('src_zone', 'any')[:255],
+                    'dst_zone': rule_data.get('dst_zone', 'any')[:255],
+                    'src': rule_data.get('src', 'any'),  # Text field, no length limit
+                    'dst': rule_data.get('dst', 'any'),  # Text field, no length limit
+                    'service': rule_data.get('service', 'any'),  # Text field, no length limit
+                    'action': rule_data.get('action', 'allow')[:50],
+                    'position': rule_data.get('position', i + 1),
+                    'is_disabled': rule_data.get('is_disabled', False),
+                    'raw_xml': rule_data.get('raw_xml', '')  # Text field, no length limit
+                }
+
+                validated_rules.append(rule_record)
+
+            except Exception as e:
+                logger.error(f"Error validating rule {i} '{rule_data.get('rule_name', 'unknown')}': {str(e)}")
+                continue
+
+        if not validated_rules:
+            logger.warning("No valid rules to store after validation")
+            return 0
+
+        # Perform batch insert
+        logger.info(f"Performing batch insert of {len(validated_rules)} rules")
+
+        # Use bulk_insert_mappings for better performance
+        db_session.bulk_insert_mappings(FirewallRule, validated_rules)
+
+        logger.info(f"Successfully stored {len(validated_rules)} out of {len(rules_data)} rules")
+        return len(validated_rules)
+
+    except Exception as e:
+        logger.error(f"Database error during rules storage: {str(e)}")
+        raise Exception(f"Failed to store rules: {str(e)}")
+
+def store_objects(db_session, audit_id: int, objects_data: List[Dict[str, Any]]) -> int:
+    """
+    Store parsed objects to the ObjectDefinition table with batch operations.
+
+    Args:
+        db_session: SQLAlchemy database session
+        audit_id: ID of the audit session
+        objects_data: List of dictionaries containing object data
+
+    Returns:
+        int: Number of objects successfully stored
+
+    Raises:
+        ValueError: If required fields are missing
+        Exception: For database errors
+    """
+    if not objects_data:
+        logger.info("No objects to store")
+        return 0
+
+    try:
+        from src.models import ObjectDefinition
+
+        # Validate and prepare objects for batch insert
+        validated_objects = []
+        for i, object_data in enumerate(objects_data):
+            try:
+                # Validate required fields
+                required_fields = ['object_type', 'name']
+                for field in required_fields:
+                    if field not in object_data:
+                        logger.error(f"Missing required field '{field}' in object {i}")
+                        continue
+
+                # Prepare object data with audit_id
+                object_record = {
+                    'audit_id': audit_id,
+                    'object_type': object_data.get('object_type', 'unknown')[:50],
+                    'name': object_data.get('name', f'object_{i}')[:255],
+                    'value': object_data.get('value', ''),  # Text field, no length limit
+                    'used_in_rules': object_data.get('used_in_rules', 0),
+                    'raw_xml': object_data.get('raw_xml', '')  # Text field, no length limit
+                }
+
+                validated_objects.append(object_record)
+
+            except Exception as e:
+                logger.error(f"Error validating object {i} '{object_data.get('name', 'unknown')}': {str(e)}")
+                continue
+
+        if not validated_objects:
+            logger.warning("No valid objects to store after validation")
+            return 0
+
+        # Perform batch insert
+        logger.info(f"Performing batch insert of {len(validated_objects)} objects")
+
+        # Use bulk_insert_mappings for better performance
+        db_session.bulk_insert_mappings(ObjectDefinition, validated_objects)
+
+        logger.info(f"Successfully stored {len(validated_objects)} out of {len(objects_data)} objects")
+        return len(validated_objects)
+
+    except Exception as e:
+        logger.error(f"Database error during objects storage: {str(e)}")
+        raise Exception(f"Failed to store objects: {str(e)}")

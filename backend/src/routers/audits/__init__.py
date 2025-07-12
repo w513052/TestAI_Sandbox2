@@ -8,7 +8,9 @@ from src.utils.parse_config import (
     parse_rules,
     parse_objects,
     parse_metadata,
-    parse_set_config
+    parse_set_config,
+    store_rules,
+    store_objects
 )
 from src.utils.logging import logger
 from datetime import datetime
@@ -157,57 +159,23 @@ async def create_audit_session(
                 }
             )
         
-        # Store parsed rules with enhanced error handling
+        # Store parsed rules using batch operations
         try:
-            if rules_data:
-                rules_stored = 0
-                for rule_data in rules_data:
-                    try:
-                        rule = FirewallRule(
-                            audit_id=audit_id,
-                            **rule_data
-                        )
-                        db.add(rule)
-                        rules_stored += 1
-                    except Exception as e:
-                        logger.error(f"Failed to store rule '{rule_data.get('rule_name', 'unknown')}': {str(e)}")
-                        # Continue with other rules instead of failing completely
-                        continue
-
-                logger.info(f"Successfully stored {rules_stored} out of {len(rules_data)} rules")
-            else:
-                logger.info("No rules to store")
-
+            rules_stored = store_rules(db, audit_id, rules_data)
+            logger.info(f"Batch storage completed: {rules_stored} rules stored")
         except Exception as e:
-            logger.error(f"Error during rules storage: {str(e)}")
+            logger.error(f"Error during batch rules storage: {str(e)}")
             # Don't fail the entire operation if rules storage fails
-            pass
+            rules_stored = 0
         
-        # Store parsed objects with enhanced error handling
+        # Store parsed objects using batch operations
         try:
-            if objects_data:
-                objects_stored = 0
-                for object_data in objects_data:
-                    try:
-                        obj = ObjectDefinition(
-                            audit_id=audit_id,
-                            **object_data
-                        )
-                        db.add(obj)
-                        objects_stored += 1
-                    except Exception as e:
-                        logger.error(f"Failed to store object '{object_data.get('name', 'unknown')}': {str(e)}")
-                        # Continue with other objects instead of failing completely
-                        continue
-
-                logger.info(f"Successfully stored {objects_stored} out of {len(objects_data)} objects")
-            else:
-                logger.info("No objects to store")
-
+            objects_stored = store_objects(db, audit_id, objects_data)
+            logger.info(f"Batch storage completed: {objects_stored} objects stored")
         except Exception as e:
-            logger.error(f"Error during objects storage: {str(e)}")
+            logger.error(f"Error during batch objects storage: {str(e)}")
             # Don't fail the entire operation if objects storage fails
-            pass
+            objects_stored = 0
 
         # Final commit for all data
         try:
