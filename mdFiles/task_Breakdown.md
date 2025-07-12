@@ -90,16 +90,16 @@ Below is a detailed markdown list of 1-story-point tasks for implementing the Lo
    - [x] Generate a unique `audit_id` and include it in the response, per AIDesign.txt.
 
 8. **Store Parsed Rules in Database**
-   - [ ] Create a function `store_rules` in `src/utils/parse_config.py` to save parsed rules to the `FirewallRule` table using SQLAlchemy, linking each rule to the `audit_id`, per DBSchema.txt.
-   - [ ] Map parsed rule attributes to `FirewallRule` model fields, ensuring all required fields (`id`, `audit_id`, `rule_name`, `rule_type`, `position`) are populated.
-   - [ ] Use batch inserts to optimize database writes for large rule sets, as suggested in DBSchema.txt’s performance considerations.
-   - [ ] Log the number of rules stored and any database errors.
+   - [x] Create a function `store_rules` in `src/utils/parse_config.py` to save parsed rules to the `FirewallRule` table using SQLAlchemy, linking each rule to the `audit_id`, per DBSchema.txt.
+   - [x] Map parsed rule attributes to `FirewallRule` model fields, ensuring all required fields (`id`, `audit_id`, `rule_name`, `rule_type`, `position`) are populated.
+   - [x] Use batch inserts to optimize database writes for large rule sets, as suggested in DBSchema.txt’s performance considerations.
+   - [x] Log the number of rules stored and any database errors.
 
 9. **Store Parsed Objects in Database**
-   - [ ] Create a function `store_objects` in `src/utils/parse_config.py` to save parsed address and service objects to the `ObjectDefinition` table, linking each to the `audit_id`, per DBSchema.txt.
-   - [ ] Map parsed object attributes to `ObjectDefinition` model fields, ensuring required fields (`id`, `audit_id`, `object_type`, `name`) are populated.
-   - [ ] Use batch inserts for efficiency, as per DBSchema.txt.
-   - [ ] Log the number of objects stored and any database errors.
+   - [x] Create a function `store_objects` in `src/utils/parse_config.py` to save parsed address and service objects to the `ObjectDefinition` table, linking each to the `audit_id`, per DBSchema.txt.
+   - [x] Map parsed object attributes to `ObjectDefinition` model fields, ensuring required fields (`id`, `audit_id`, `object_type`, `name`) are populated.
+   - [x] Use batch inserts for efficiency, as per DBSchema.txt.
+   - [x] Log the number of objects stored and any database errors.
 
 10. **Implement Streaming XML Parsing**
     - [ ] Modify the `parse_rules` and `parse_objects` functions in `src/utils/parse_config.py` to use `lxml.etree.iterparse` for streaming XML parsing, as recommended in DBSchema.txt’s performance considerations.

@@ -162,8 +162,9 @@ async def create_audit_session(
         
         # Analyze object usage in rules before storage
         try:
-            if rules_data and objects_data:
-                object_usage = analyze_object_usage(rules_data, objects_data)
+            if objects_data:
+                # Run usage analysis even if no rules (all objects would be unused)
+                object_usage = analyze_object_usage(rules_data or [], objects_data)
                 logger.info(f"Object usage analysis completed for {len(object_usage)} objects")
         except Exception as e:
             logger.warning(f"Object usage analysis failed: {str(e)}")
