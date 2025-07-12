@@ -85,9 +85,9 @@ Below is a detailed markdown list of 1-story-point tasks for implementing the Lo
    - [x] Log parsing success or failure, handling malformed commands with a descriptive error message.
 
 7. **Store Audit Session in Database**
-   - [ ] In the `POST /api/v1/audits` endpoint, create an `AuditSession` record using SQLAlchemy, populating `session_name`, `filename`, `file_hash`, `start_time` (using `datetime.utcnow`), and `metadata`, per DBSchema.txt.
-   - [ ] Use the `SessionLocal` from `src/database.py` to add and commit the record, as shown in Backend.txt.
-   - [ ] Generate a unique `audit_id` and include it in the response, per AIDesign.txt.
+   - [x] In the `POST /api/v1/audits` endpoint, create an `AuditSession` record using SQLAlchemy, populating `session_name`, `filename`, `file_hash`, `start_time` (using `datetime.utcnow`), and `metadata`, per DBSchema.txt.
+   - [x] Use the `SessionLocal` from `src/database.py` to add and commit the record, as shown in Backend.txt.
+   - [x] Generate a unique `audit_id` and include it in the response, per AIDesign.txt.
 
 8. **Store Parsed Rules in Database**
    - [ ] Create a function `store_rules` in `src/utils/parse_config.py` to save parsed rules to the `FirewallRule` table using SQLAlchemy, linking each rule to the `audit_id`, per DBSchema.txt.
