@@ -340,3 +340,111 @@ async def get_audit_session(audit_id: int, db: Session = Depends(get_db)):
                 "message": "Failed to retrieve audit session"
             }
         )
+
+@router.get("/{audit_id}/analysis")
+async def get_audit_analysis(audit_id: int, db: Session = Depends(get_db)):
+    """
+    Get analysis results for a specific audit session.
+
+    Args:
+        audit_id: ID of the audit session
+
+    Returns:
+        Analysis results including unused objects, duplicate rules, etc.
+    """
+    try:
+        # Verify audit session exists
+        session = db.query(AuditSession).filter(AuditSession.id == audit_id).first()
+
+        if not session:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error_code": "AUDIT_NOT_FOUND",
+                    "message": f"Audit session with ID {audit_id} not found"
+                }
+            )
+
+        # Get unused objects (objects with used_in_rules = 0)
+        unused_objects = db.query(ObjectDefinition).filter(
+            ObjectDefinition.audit_id == audit_id,
+            ObjectDefinition.used_in_rules == 0
+        ).all()
+
+        # Get used objects (objects with used_in_rules > 0)
+        used_objects = db.query(ObjectDefinition).filter(
+            ObjectDefinition.audit_id == audit_id,
+            ObjectDefinition.used_in_rules > 0
+        ).all()
+
+        # Get all rules for this audit
+        all_rules = db.query(FirewallRule).filter(FirewallRule.audit_id == audit_id).all()
+
+        # Get disabled rules
+        disabled_rules = db.query(FirewallRule).filter(
+            FirewallRule.audit_id == audit_id,
+            FirewallRule.is_disabled == True
+        ).all()
+
+        # Format unused objects for frontend
+        unused_objects_data = []
+        for obj in unused_objects:
+            unused_objects_data.append({
+                "id": obj.id,
+                "name": obj.name,
+                "type": obj.object_type,
+                "value": obj.value,
+                "used_in_rules": obj.used_in_rules,
+                "severity": "medium",  # Default severity for unused objects
+                "description": f"Object '{obj.name}' is not referenced by any rules"
+            })
+
+        # Format disabled rules for frontend
+        disabled_rules_data = []
+        for rule in disabled_rules:
+            disabled_rules_data.append({
+                "id": rule.id,
+                "name": rule.rule_name,
+                "type": rule.rule_type,
+                "position": rule.position,
+                "action": rule.action,
+                "severity": "low",  # Disabled rules are typically low severity
+                "description": f"Rule '{rule.rule_name}' is disabled and will not process traffic"
+            })
+
+        analysis_data = {
+            "audit_id": audit_id,
+            "session_name": session.session_name,
+            "analysis_summary": {
+                "total_rules": len(all_rules),
+                "total_objects": len(unused_objects) + len(used_objects),
+                "unused_objects_count": len(unused_objects),
+                "used_objects_count": len(used_objects),
+                "disabled_rules_count": len(disabled_rules)
+            },
+            "unusedObjects": unused_objects_data,
+            "unusedRules": disabled_rules_data,  # For now, treat disabled rules as "unused"
+            "duplicateRules": [],  # TODO: Implement duplicate detection
+            "shadowedRules": [],   # TODO: Implement shadow rule detection
+            "overlappingRules": [] # TODO: Implement overlapping rule detection
+        }
+
+        logger.info(f"Analysis completed for audit {audit_id}: {len(unused_objects)} unused objects, {len(disabled_rules)} disabled rules")
+
+        return {
+            "status": "success",
+            "data": analysis_data,
+            "message": "Analysis results retrieved successfully"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving analysis for audit {audit_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error_code": "INTERNAL_ERROR",
+                "message": "Failed to retrieve analysis results"
+            }
+        )
