@@ -253,7 +253,7 @@ def parse_metadata(xml_content: bytes) -> Dict[str, Any]:
 
 def parse_set_config(set_content: str) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
     """
-    Parse Palo Alto set-format configuration files with support for various formats.
+    Parse Palo Alto set-format configuration files with support for incremental set commands.
 
     Args:
         set_content: Raw set-format content as string
@@ -266,23 +266,19 @@ def parse_set_config(set_content: str) -> tuple[List[Dict[str, Any]], List[Dict[
         processed_content = preprocess_set_content(set_content)
         lines = processed_content.strip().split('\n')
 
-        rules_data = []
+        # Use incremental parsing for rules that are built up with multiple set commands
+        rules_dict = {}  # rule_name -> rule_data
         objects_data = []
         metadata = {"firmware_version": "unknown", "rule_count": 0, "address_object_count": 0, "service_object_count": 0}
-
-        rule_position = 1
 
         for line in lines:
             line = line.strip()
             if not line or line.startswith('#'):
                 continue
 
-            # Parse security rules (multiple variations)
+            # Parse security rules (incremental format)
             if ('set security rules' in line or 'set rulebase security rules' in line):
-                rule_data = parse_set_rule(line, rule_position)
-                if rule_data:
-                    rules_data.append(rule_data)
-                    rule_position += 1
+                parse_incremental_set_rule(line, rules_dict)
 
             # Parse address objects (multiple variations)
             elif 'set address' in line:
@@ -296,12 +292,18 @@ def parse_set_config(set_content: str) -> tuple[List[Dict[str, Any]], List[Dict[
                 if obj_data:
                     objects_data.append(obj_data)
 
+        # Convert rules_dict to rules_data list
+        rules_data = []
+        for position, (rule_name, rule_data) in enumerate(rules_dict.items(), 1):
+            rule_data["position"] = position
+            rules_data.append(rule_data)
+
         # Update metadata counts
         metadata["rule_count"] = len(rules_data)
         metadata["address_object_count"] = len([obj for obj in objects_data if obj["object_type"] == "address"])
         metadata["service_object_count"] = len([obj for obj in objects_data if obj["object_type"] == "service"])
 
-        logger.info(f"Parsed {len(rules_data)} security rules from set format")
+        logger.info(f"Parsed {len(rules_data)} security rules from incremental set format")
         logger.info(f"Parsed {len(objects_data)} objects from set format")
 
         return rules_data, objects_data, metadata
@@ -350,6 +352,92 @@ def preprocess_set_content(content: str) -> str:
     except Exception as e:
         logger.warning(f"Error preprocessing set content: {str(e)}")
         return content  # Return original if preprocessing fails
+
+def parse_incremental_set_rule(line: str, rules_dict: Dict[str, Dict[str, Any]]) -> None:
+    """
+    Parse incremental set rule commands that build up rules with multiple set statements.
+
+    Examples:
+    - set security rules "Allow-Web-Access" from trust
+    - set security rules "Allow-Web-Access" to untrust
+    - set security rules "Allow-Web-Access" source Server-Web-01
+    - set security rules "Allow-Web-Access" destination any
+    - set security rules "Allow-Web-Access" service service-http
+    - set security rules "Allow-Web-Access" action allow
+    """
+    try:
+        import re
+
+        # Extract rule name (quoted or unquoted)
+        name_match = re.search(r'set (?:rulebase )?security rules ["\']?([^"\']+)["\']?', line)
+        if not name_match:
+            return
+
+        rule_name = name_match.group(1).strip()
+
+        # Initialize rule if not exists
+        if rule_name not in rules_dict:
+            rules_dict[rule_name] = {
+                "rule_name": rule_name,
+                "rule_type": "security",
+                "src_zone": "any",
+                "dst_zone": "any",
+                "src": "any",
+                "dst": "any",
+                "service": "any",
+                "action": "allow",
+                "position": 0,  # Will be set later
+                "is_disabled": False,
+                "raw_xml": ""
+            }
+
+        rule_data = rules_dict[rule_name]
+
+        # Update rule_data based on the specific attribute being set
+        if ' from ' in line:
+            from_match = re.search(r'from (["\']?)([^"\'\s]+)\1', line)
+            if from_match:
+                rule_data["src_zone"] = from_match.group(2)
+
+        if ' to ' in line:
+            to_match = re.search(r'to (["\']?)([^"\'\s]+)\1', line)
+            if to_match:
+                rule_data["dst_zone"] = to_match.group(2)
+
+        if ' source ' in line:
+            source_match = re.search(r'source (["\']?)([^"\'\s]+)\1', line)
+            if source_match:
+                rule_data["src"] = source_match.group(2)
+
+        if ' destination ' in line:
+            dest_match = re.search(r'destination (["\']?)([^"\'\s]+)\1', line)
+            if dest_match:
+                rule_data["dst"] = dest_match.group(2)
+
+        if ' service ' in line:
+            service_match = re.search(r'service (["\']?)([^"\'\s\[]+)\1', line)
+            if service_match:
+                rule_data["service"] = service_match.group(2)
+
+        if ' action ' in line:
+            action_match = re.search(r'action (["\']?)([^"\'\s]+)\1', line)
+            if action_match:
+                rule_data["action"] = action_match.group(2)
+
+        # Check if rule is disabled
+        if 'disabled yes' in line or 'disable' in line:
+            rule_data["is_disabled"] = True
+
+        # Append to raw_xml for debugging
+        if rule_data["raw_xml"]:
+            rule_data["raw_xml"] += "; " + line
+        else:
+            rule_data["raw_xml"] = line
+
+        logger.debug(f"Updated rule '{rule_name}' with: {line}")
+
+    except Exception as e:
+        logger.error(f"Error parsing incremental set rule: {line} - {str(e)}")
 
 def parse_set_rule(line: str, position: int) -> Dict[str, Any]:
     """
