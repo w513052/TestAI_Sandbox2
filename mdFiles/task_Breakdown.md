@@ -79,10 +79,10 @@ Below is a detailed markdown list of 1-story-point tasks for implementing the Lo
    - [x] Log successful metadata extraction to the log file, per Backend.txt’s logging setup.
 
 6. **Parse Set-Format Config**
-   - [ ] Create a function `parse_set_config` in `src/utils/parse_config.py` to parse Palo Alto set-format configuration files (text-based commands), as referenced in ProjectBriefDoc.txt.
-   - [ ] Use regex or string splitting to identify `set security rules` commands and extract attributes like `rule_name`, `src_zone`, `dst_zone`, `src`, `dst`, `service`, `action`, and `disabled` status.
-   - [ ] Convert parsed data into the same dictionary structure as the XML parser for rules, ensuring consistency with `FirewallRule` model requirements in DBSchema.txt.
-   - [ ] Log parsing success or failure, handling malformed commands with a descriptive error message.
+   - [x] Create a function `parse_set_config` in `src/utils/parse_config.py` to parse Palo Alto set-format configuration files (text-based commands), as referenced in ProjectBriefDoc.txt.
+   - [x] Use regex or string splitting to identify `set security rules` commands and extract attributes like `rule_name`, `src_zone`, `dst_zone`, `src`, `dst`, `service`, `action`, and `disabled` status.
+   - [x] Convert parsed data into the same dictionary structure as the XML parser for rules, ensuring consistency with `FirewallRule` model requirements in DBSchema.txt.
+   - [x] Log parsing success or failure, handling malformed commands with a descriptive error message.
 
 7. **Store Audit Session in Database**
    - [ ] In the `POST /api/v1/audits` endpoint, create an `AuditSession` record using SQLAlchemy, populating `session_name`, `filename`, `file_hash`, `start_time` (using `datetime.utcnow`), and `metadata`, per DBSchema.txt.

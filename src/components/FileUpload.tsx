@@ -9,6 +9,27 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileAnalysis }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [backendStatus, setBackendStatus] = useState<string>('checking...');
+
+  // Test backend connection on component mount
+  React.useEffect(() => {
+    const testBackend = async () => {
+      try {
+        const response = await fetch('http://127.0.0.1:8000/health');
+        if (response.ok) {
+          setBackendStatus('connected');
+          console.log('Backend connection successful');
+        } else {
+          setBackendStatus('error');
+          console.error('Backend responded with error:', response.status);
+        }
+      } catch (error) {
+        setBackendStatus('failed');
+        console.error('Backend connection failed:', error);
+      }
+    };
+    testBackend();
+  }, []);
 
   const generateMockAnalysis = (fileName: string) => {
     return {
@@ -142,12 +163,79 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileAnalysis }) => {
     setUploadedFile(file);
     setIsAnalyzing(true);
 
-    // Simulate analysis time
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    try {
+      // Create form data for the API request
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('session_name', `Analysis of ${file.name}`);
 
-    const analysisData = generateMockAnalysis(file.name);
-    setIsAnalyzing(false);
-    onFileAnalysis(analysisData, file.name);
+      console.log('Uploading file:', file.name, 'to backend...');
+
+      // Call the backend API
+      const response = await fetch('http://127.0.0.1:8000/api/v1/audits/', {
+        method: 'POST',
+        body: formData,
+        headers: {
+          // Don't set Content-Type for FormData - let browser set it with boundary
+        },
+      });
+
+      console.log('Response status:', response.status);
+
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      // Convert backend response to frontend format
+      const totalObjects = (result.data.metadata.address_object_count || 0) + (result.data.metadata.service_object_count || 0);
+
+      const analysisData = {
+        summary: {
+          totalRules: result.data.metadata.rules_parsed || 0,
+          totalObjects: totalObjects,
+          duplicateRules: 0, // TODO: Implement in backend
+          shadowedRules: 0,  // TODO: Implement in backend
+          unusedRules: 0,    // TODO: Implement in backend
+          overlappingRules: 0, // TODO: Implement in backend
+          unusedObjects: 0,  // TODO: Implement in backend
+          redundantObjects: 0, // TODO: Implement in backend
+          analysisDate: result.data.start_time,
+          configVersion: result.data.metadata.firmware_version || 'Unknown',
+          auditId: result.data.audit_id,
+          fileName: result.data.filename,
+          fileHash: result.data.file_hash,
+        },
+        // For now, use empty arrays - these will be populated when we implement analysis logic
+        duplicateRules: [],
+        shadowedRules: [],
+        unusedRules: [],
+        overlappingRules: [],
+        unusedObjects: [],
+        recommendations: [
+          {
+            category: 'parsing',
+            priority: 'info',
+            title: `Successfully parsed ${result.data.metadata.rules_parsed} rules`,
+            description: `Configuration file processed successfully with ${result.data.metadata.address_object_count} address objects and ${result.data.metadata.service_object_count} service objects`,
+            impact: 'File parsing completed - ready for detailed analysis'
+          }
+        ]
+      };
+
+      setIsAnalyzing(false);
+      onFileAnalysis(analysisData, file.name);
+    } catch (error) {
+      console.error('File upload failed:', error);
+      console.error('Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      setIsAnalyzing(false);
+      // You might want to show an error message to the user here
+      alert(`Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}\n\nCheck browser console for details.`);
+    }
   }, [onFileAnalysis]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -193,9 +281,18 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileAnalysis }) => {
       <div className="text-center mb-8">
         <h2 className="text-3xl font-bold text-gray-900 mb-4">Upload Palo Alto Configuration</h2>
         <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-          Upload your firewall configuration file for comprehensive analysis. 
-          All processing happens locally - your data never leaves your device.
+          Upload your firewall configuration file for comprehensive analysis.
+          Processing happens on your local backend server.
         </p>
+        <div className="mt-4">
+          <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+            backendStatus === 'connected' ? 'bg-green-100 text-green-800' :
+            backendStatus === 'checking...' ? 'bg-yellow-100 text-yellow-800' :
+            'bg-red-100 text-red-800'
+          }`}>
+            Backend: {backendStatus}
+          </span>
+        </div>
       </div>
 
       <div className="grid lg:grid-cols-2 gap-8">

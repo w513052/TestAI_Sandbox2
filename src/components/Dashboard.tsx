@@ -18,6 +18,13 @@ const Dashboard: React.FC<DashboardProps> = ({ data, fileName }) => {
       description: 'Total firewall rules analyzed'
     },
     {
+      title: 'Total Objects',
+      value: summary.totalObjects?.toLocaleString() || '0',
+      icon: Target,
+      color: 'green',
+      description: 'Total address and service objects'
+    },
+    {
       title: 'Duplicate Rules',
       value: summary.duplicateRules,
       icon: AlertTriangle,
@@ -41,7 +48,7 @@ const Dashboard: React.FC<DashboardProps> = ({ data, fileName }) => {
     {
       title: 'Overlapping Rules',
       value: summary.overlappingRules,
-      icon: Target,
+      icon: TrendingUp,
       color: 'purple',
       description: 'Rules with overlapping traffic scope'
     },
