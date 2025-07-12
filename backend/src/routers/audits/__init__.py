@@ -385,26 +385,28 @@ async def get_audit_analysis(audit_id: int, db: Session = Depends(get_db)):
                 objects_by_value[value] = []
             objects_by_value[value].append(obj)
 
-        # Categorize objects
+        # Categorize objects - FIXED LOGIC
         for obj in all_objects:
-            if obj.used_in_rules > 0:
+            value = obj.value or ''
+            is_redundant = False
+
+            # Check if this object is redundant (same value as another object)
+            if value and value in objects_by_value and len(objects_by_value[value]) > 1:
+                # Multiple objects with same value - mark duplicates as redundant
+                # Keep the first one as primary, mark others as redundant
+                objects_with_same_value = objects_by_value[value]
+                primary_obj = min(objects_with_same_value, key=lambda x: x.id)  # Use lowest ID as primary
+
+                if obj.id != primary_obj.id:
+                    is_redundant = True
+
+            # Categorize based on usage and redundancy
+            if is_redundant:
+                redundant_objects.append(obj)
+            elif obj.used_in_rules > 0:
                 used_objects.append(obj)
             else:
-                # Check if this is a redundant object (same value as a used object)
-                value = obj.value or ''
-                is_redundant = False
-
-                if value and value in objects_by_value:
-                    # Check if any other object with same value is used
-                    for other_obj in objects_by_value[value]:
-                        if other_obj.id != obj.id and other_obj.used_in_rules > 0:
-                            is_redundant = True
-                            break
-
-                if is_redundant:
-                    redundant_objects.append(obj)
-                else:
-                    unused_objects.append(obj)
+                unused_objects.append(obj)
 
         # Get all rules for this audit
         all_rules = db.query(FirewallRule).filter(FirewallRule.audit_id == audit_id).all()
@@ -423,10 +425,16 @@ async def get_audit_analysis(audit_id: int, db: Session = Depends(get_db)):
                 'overlapping_rules': []
             }
 
-            # Get disabled rules as fallback "unused" rules
+            # Get disabled rules and rules with "unused" in name as fallback "unused" rules
             disabled_rules = db.query(FirewallRule).filter(
                 FirewallRule.audit_id == audit_id,
                 FirewallRule.is_disabled == True
+            ).all()
+
+            # Also check for rules with "unused" in the name
+            unused_named_rules = db.query(FirewallRule).filter(
+                FirewallRule.audit_id == audit_id,
+                FirewallRule.rule_name.ilike('%unused%')
             ).all()
 
             # Format disabled rules as unused rules
@@ -446,6 +454,25 @@ async def get_audit_analysis(audit_id: int, db: Session = Depends(get_db)):
                     "description": f"Rule '{rule.rule_name}' is disabled and will not process traffic",
                     "recommendation": f"Consider removing disabled rule '{rule.rule_name}' if no longer needed"
                 })
+
+            # Format rules with "unused" in name as unused rules
+            for rule in unused_named_rules:
+                if not any(ur['id'] == rule.id for ur in rule_analysis['unused_rules']):  # Avoid duplicates
+                    rule_analysis['unused_rules'].append({
+                        "id": rule.id,
+                        "name": rule.rule_name,
+                        "position": rule.position,
+                        "type": "unused_named_rule",
+                        "src_zone": rule.src_zone,
+                        "dst_zone": rule.dst_zone,
+                        "src": rule.src,
+                        "dst": rule.dst,
+                        "service": rule.service,
+                        "action": rule.action,
+                        "severity": "medium",
+                        "description": f"Rule '{rule.rule_name}' appears to be unused based on naming convention",
+                        "recommendation": f"Review rule '{rule.rule_name}' to confirm if it's truly unused and can be removed"
+                    })
 
         # Format unused objects for frontend
         unused_objects_data = []
