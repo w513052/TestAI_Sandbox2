@@ -253,7 +253,7 @@ def parse_metadata(xml_content: bytes) -> Dict[str, Any]:
 
 def parse_set_config(set_content: str) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
     """
-    Parse Palo Alto set-format configuration files.
+    Parse Palo Alto set-format configuration files with support for various formats.
 
     Args:
         set_content: Raw set-format content as string
@@ -262,7 +262,10 @@ def parse_set_config(set_content: str) -> tuple[List[Dict[str, Any]], List[Dict[
         Tuple of (rules_data, objects_data, metadata)
     """
     try:
-        lines = set_content.strip().split('\n')
+        # Preprocess content to handle different formats
+        processed_content = preprocess_set_content(set_content)
+        lines = processed_content.strip().split('\n')
+
         rules_data = []
         objects_data = []
         metadata = {"firmware_version": "unknown", "rule_count": 0, "address_object_count": 0, "service_object_count": 0}
@@ -274,21 +277,21 @@ def parse_set_config(set_content: str) -> tuple[List[Dict[str, Any]], List[Dict[
             if not line or line.startswith('#'):
                 continue
 
-            # Parse security rules
-            if line.startswith('set security rules') or line.startswith('set rulebase security rules'):
+            # Parse security rules (multiple variations)
+            if ('set security rules' in line or 'set rulebase security rules' in line):
                 rule_data = parse_set_rule(line, rule_position)
                 if rule_data:
                     rules_data.append(rule_data)
                     rule_position += 1
 
-            # Parse address objects
-            elif line.startswith('set address'):
+            # Parse address objects (multiple variations)
+            elif 'set address' in line:
                 obj_data = parse_set_address_object(line)
                 if obj_data:
                     objects_data.append(obj_data)
 
-            # Parse service objects
-            elif line.startswith('set service'):
+            # Parse service objects (multiple variations)
+            elif 'set service' in line:
                 obj_data = parse_set_service_object(line)
                 if obj_data:
                     objects_data.append(obj_data)
@@ -306,6 +309,47 @@ def parse_set_config(set_content: str) -> tuple[List[Dict[str, Any]], List[Dict[
     except Exception as e:
         logger.error(f"Error parsing set config: {str(e)}")
         raise ValueError(f"Failed to parse set config: {str(e)}")
+
+def preprocess_set_content(content: str) -> str:
+    """
+    Preprocess set content to handle various format variations.
+
+    Args:
+        content: Raw set content
+
+    Returns:
+        Processed content with normalized format
+    """
+    try:
+        import re
+
+        # Split content into lines
+        lines = content.split('\n')
+        processed_lines = []
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Handle concatenated set commands on single lines
+            # Look for multiple "set" commands on the same line
+            if line.count('set ') > 1:
+                # Split on 'set ' and rejoin properly
+                parts = line.split('set ')
+                for i, part in enumerate(parts):
+                    if i == 0 and not part.strip():
+                        continue  # Skip empty first part
+                    if part.strip():
+                        processed_lines.append('set ' + part.strip())
+            else:
+                processed_lines.append(line)
+
+        return '\n'.join(processed_lines)
+
+    except Exception as e:
+        logger.warning(f"Error preprocessing set content: {str(e)}")
+        return content  # Return original if preprocessing fails
 
 def parse_set_rule(line: str, position: int) -> Dict[str, Any]:
     """
@@ -356,21 +400,35 @@ def parse_set_rule(line: str, position: int) -> Dict[str, Any]:
 
 def parse_set_address_object(line: str) -> Dict[str, Any]:
     """
-    Parse a set address object command.
+    Parse a set address object command with support for various formats.
 
     Examples:
     - set address "Server-1" ip-netmask 192.168.1.100/32
     - set address "Web-Server" fqdn www.example.com
+    - set address Server-1 ip-netmask 192.168.1.100/32 (no quotes)
     """
     try:
         import re
 
-        # Extract object name
-        name_match = re.search(r'set address ["\']?([^"\']+)["\']?', line)
+        # More robust regex to extract object name (handles quoted and unquoted)
+        # Pattern: set address "name" or set address name
+        name_match = re.search(r'set address (["\']?)([^"\'\s]+)\1', line)
         if not name_match:
-            return {}
+            # Fallback: try to extract the first word after "set address"
+            name_match = re.search(r'set address\s+([^\s]+)', line)
+            if not name_match:
+                logger.warning(f"Could not extract address object name from: {line}")
+                return {}
+            name = name_match.group(1).strip('"\'')
+        else:
+            name = name_match.group(2).strip()
 
-        name = name_match.group(1).strip()
+        # Ensure we only get the object name, not the entire command
+        if ' ' in name:
+            # If name contains spaces, take only the first part
+            name = name.split()[0].strip('"\'')
+
+        logger.debug(f"Extracted address object name: '{name}' from line: {line}")
 
         # Extract value (ip-netmask or fqdn)
         value = ""
@@ -382,6 +440,15 @@ def parse_set_address_object(line: str) -> Dict[str, Any]:
             fqdn_match = re.search(r'fqdn ([^\s]+)', line)
             if fqdn_match:
                 value = fqdn_match.group(1)
+        else:
+            # Try to extract any IP-like value as fallback
+            ip_match = re.search(r'(\d+\.\d+\.\d+\.\d+(?:/\d+)?)', line)
+            if ip_match:
+                value = ip_match.group(1)
+
+        if not value:
+            logger.warning(f"Could not extract address value from: {line}")
+            return {}
 
         return {
             "object_type": "address",
