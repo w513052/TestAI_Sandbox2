@@ -11,7 +11,9 @@ from src.utils.parse_config import (
     parse_set_config,
     store_rules,
     store_objects,
-    analyze_object_usage
+    analyze_object_usage,
+    parse_rules_adaptive,
+    parse_objects_adaptive
 )
 from src.utils.logging import logger
 from datetime import datetime
@@ -85,9 +87,10 @@ async def create_audit_session(
         # Parse configuration file
         try:
             if file.content_type in ["application/xml", "text/xml"]:
-                # Parse XML format
-                rules_data = parse_rules(file_content)
-                objects_data = parse_objects(file_content)
+                # Parse XML format with adaptive streaming for large files
+                logger.info(f"Parsing XML configuration ({len(file_content) / 1024:.1f}KB)")
+                rules_data = parse_rules_adaptive(file_content)
+                objects_data = parse_objects_adaptive(file_content)
                 config_metadata = parse_metadata(file_content)
             else:
                 # Parse set format configuration

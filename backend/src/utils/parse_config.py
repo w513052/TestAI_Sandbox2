@@ -665,3 +665,373 @@ def analyze_object_usage(rules_data: List[Dict[str, Any]], objects_data: List[Di
     except Exception as e:
         logger.error(f"Error analyzing object usage: {str(e)}")
         return {}
+
+def parse_rules_streaming(xml_content: bytes) -> List[Dict[str, Any]]:
+    """
+    Extract security rules from XML config using streaming parser for large files.
+
+    Args:
+        xml_content: Raw XML content as bytes
+
+    Returns:
+        List of dictionaries containing rule data
+
+    Raises:
+        ValueError: If XML parsing fails
+    """
+    try:
+        import io
+        from xml.etree.ElementTree import iterparse
+
+        rules = []
+        xml_stream = io.BytesIO(xml_content)
+
+        # Track current context for nested parsing
+        current_rule = None
+        in_rules_section = False
+        rule_depth = 0
+
+        logger.info("Starting streaming XML parsing for rules")
+
+        # Use iterparse for memory-efficient streaming
+        for event, elem in iterparse(xml_stream, events=('start', 'end')):
+
+            if event == 'start':
+                # Detect when we enter a rules section
+                if elem.tag == 'rules':
+                    # Check if we're in a security context by tracking the path
+                    in_rules_section = True
+                    logger.debug("Entered security rules section")
+
+                # Detect individual rule entries
+                elif elem.tag == 'entry' and in_rules_section:
+                    rule_name = elem.get("name", f"rule_{len(rules)}")
+                    current_rule = {
+                        "rule_name": rule_name,
+                        "rule_type": "security",
+                        "src_zone": "any",
+                        "dst_zone": "any",
+                        "src": "any",
+                        "dst": "any",
+                        "service": "any",
+                        "action": "allow",
+                        "position": len(rules) + 1,
+                        "is_disabled": False,
+                        "raw_xml": ""
+                    }
+                    rule_depth = 0
+
+            elif event == 'end':
+                # Process completed rule entry
+                if elem.tag == 'entry' and in_rules_section and current_rule is not None:
+                    # Extract rule data from completed element
+                    current_rule = _extract_rule_data_streaming(elem, current_rule)
+                    current_rule["raw_xml"] = ET.tostring(elem, encoding='unicode')
+
+                    rules.append(current_rule)
+                    logger.debug(f"Parsed rule: {current_rule['rule_name']}")
+
+                    # Clear memory by removing processed element
+                    elem.clear()
+                    current_rule = None
+
+                # Exit rules section
+                elif elem.tag == 'rules' and in_rules_section:
+                    in_rules_section = False
+                    logger.debug("Exited security rules section")
+
+                # Clear processed elements to save memory
+                elif elem.tag in ['devices', 'vsys', 'rulebase', 'security']:
+                    elem.clear()
+
+        logger.info(f"Streaming parser completed: {len(rules)} security rules parsed")
+        return rules
+
+    except Exception as e:
+        logger.error(f"Error in streaming rules parser: {str(e)}")
+        raise ValueError(f"Failed to parse rules with streaming parser: {str(e)}")
+
+def _extract_rule_data_streaming(rule_elem, rule_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Helper function to extract rule data from XML element during streaming parse.
+
+    Args:
+        rule_elem: XML element containing rule data
+        rule_data: Dictionary to populate with rule data
+
+    Returns:
+        Updated rule data dictionary
+    """
+    try:
+        # Extract from zone
+        from_elem = rule_elem.find("from")
+        if from_elem is not None:
+            member = from_elem.find("member")
+            if member is not None and member.text:
+                rule_data["src_zone"] = member.text
+
+        # Extract to zone
+        to_elem = rule_elem.find("to")
+        if to_elem is not None:
+            member = to_elem.find("member")
+            if member is not None and member.text:
+                rule_data["dst_zone"] = member.text
+
+        # Extract source
+        source_elem = rule_elem.find("source")
+        if source_elem is not None:
+            member = source_elem.find("member")
+            if member is not None and member.text:
+                rule_data["src"] = member.text
+
+        # Extract destination
+        dest_elem = rule_elem.find("destination")
+        if dest_elem is not None:
+            member = dest_elem.find("member")
+            if member is not None and member.text:
+                rule_data["dst"] = member.text
+
+        # Extract service
+        service_elem = rule_elem.find("service")
+        if service_elem is not None:
+            member = service_elem.find("member")
+            if member is not None and member.text:
+                rule_data["service"] = member.text
+
+        # Extract action
+        action_elem = rule_elem.find("action")
+        if action_elem is not None and action_elem.text:
+            rule_data["action"] = action_elem.text
+
+        # Extract disabled status
+        disabled_elem = rule_elem.find("disabled")
+        if disabled_elem is not None:
+            rule_data["is_disabled"] = disabled_elem.text == "yes"
+
+        return rule_data
+
+    except Exception as e:
+        logger.warning(f"Error extracting rule data: {str(e)}")
+        return rule_data
+
+def parse_objects_streaming(xml_content: bytes) -> List[Dict[str, Any]]:
+    """
+    Extract address and service objects from XML config using streaming parser for large files.
+
+    Args:
+        xml_content: Raw XML content as bytes
+
+    Returns:
+        List of dictionaries containing object data
+
+    Raises:
+        ValueError: If XML parsing fails
+    """
+    try:
+        import io
+        from xml.etree.ElementTree import iterparse
+
+        objects = []
+        xml_stream = io.BytesIO(xml_content)
+
+        # Track current context for nested parsing
+        in_address_section = False
+        in_service_section = False
+        current_object = None
+
+        logger.info("Starting streaming XML parsing for objects")
+
+        # Use iterparse for memory-efficient streaming
+        for event, elem in iterparse(xml_stream, events=('start', 'end')):
+
+            if event == 'start':
+                # Detect when we enter address or service sections
+                if elem.tag == 'address':
+                    # Assume this is a top-level address section
+                    in_address_section = True
+                    logger.debug("Entered address objects section")
+
+                elif elem.tag == 'service':
+                    # Assume this is a top-level service section
+                    in_service_section = True
+                    logger.debug("Entered service objects section")
+
+                # Detect individual object entries
+                elif elem.tag == 'entry':
+                    if in_address_section:
+                        object_name = elem.get("name", f"address_{len(objects)}")
+                        current_object = {
+                            "object_type": "address",
+                            "name": object_name,
+                            "value": "",
+                            "used_in_rules": 0,
+                            "raw_xml": ""
+                        }
+
+                    elif in_service_section:
+                        object_name = elem.get("name", f"service_{len(objects)}")
+                        current_object = {
+                            "object_type": "service",
+                            "name": object_name,
+                            "value": "",
+                            "used_in_rules": 0,
+                            "raw_xml": ""
+                        }
+
+            elif event == 'end':
+                # Process completed object entry
+                if elem.tag == 'entry' and current_object is not None:
+                    if in_address_section or in_service_section:
+                        # Extract object data from completed element
+                        current_object = _extract_object_data_streaming(elem, current_object)
+                        current_object["raw_xml"] = ET.tostring(elem, encoding='unicode')
+
+                        objects.append(current_object)
+                        logger.debug(f"Parsed {current_object['object_type']} object: {current_object['name']}")
+
+                        # Clear memory by removing processed element
+                        elem.clear()
+                        current_object = None
+
+                # Exit object sections
+                elif elem.tag == 'address' and in_address_section:
+                    in_address_section = False
+                    logger.debug("Exited address objects section")
+
+                elif elem.tag == 'service' and in_service_section:
+                    in_service_section = False
+                    logger.debug("Exited service objects section")
+
+                # Clear processed elements to save memory
+                elif elem.tag in ['devices', 'vsys', 'entry']:
+                    elem.clear()
+
+        logger.info(f"Streaming parser completed: {len(objects)} objects parsed")
+        return objects
+
+    except Exception as e:
+        logger.error(f"Error in streaming objects parser: {str(e)}")
+        raise ValueError(f"Failed to parse objects with streaming parser: {str(e)}")
+
+def _extract_object_data_streaming(obj_elem, obj_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Helper function to extract object data from XML element during streaming parse.
+
+    Args:
+        obj_elem: XML element containing object data
+        obj_data: Dictionary to populate with object data
+
+    Returns:
+        Updated object data dictionary
+    """
+    try:
+        if obj_data["object_type"] == "address":
+            # Extract IP netmask or FQDN
+            ip_netmask = obj_elem.find("ip-netmask")
+            fqdn = obj_elem.find("fqdn")
+            ip_range = obj_elem.find("ip-range")
+
+            if ip_netmask is not None and ip_netmask.text:
+                obj_data["value"] = ip_netmask.text
+            elif fqdn is not None and fqdn.text:
+                obj_data["value"] = fqdn.text
+            elif ip_range is not None and ip_range.text:
+                obj_data["value"] = ip_range.text
+
+        elif obj_data["object_type"] == "service":
+            # Extract protocol and port information
+            protocol_elem = obj_elem.find("protocol")
+            if protocol_elem is not None:
+                tcp_elem = protocol_elem.find("tcp")
+                udp_elem = protocol_elem.find("udp")
+
+                if tcp_elem is not None:
+                    port_elem = tcp_elem.find("port")
+                    if port_elem is not None and port_elem.text:
+                        obj_data["value"] = f"tcp/{port_elem.text}"
+                elif udp_elem is not None:
+                    port_elem = udp_elem.find("port")
+                    if port_elem is not None and port_elem.text:
+                        obj_data["value"] = f"udp/{port_elem.text}"
+
+        return obj_data
+
+    except Exception as e:
+        logger.warning(f"Error extracting object data: {str(e)}")
+        return obj_data
+
+def parse_rules_adaptive(xml_content: bytes, force_streaming: bool = False) -> List[Dict[str, Any]]:
+    """
+    Parse rules using adaptive approach - streaming for large files, regular for small files.
+
+    Args:
+        xml_content: Raw XML content as bytes
+        force_streaming: Force use of streaming parser regardless of file size
+
+    Returns:
+        List of dictionaries containing rule data
+    """
+    try:
+        # Define threshold for streaming (5MB)
+        STREAMING_THRESHOLD = 5 * 1024 * 1024  # 5MB
+        file_size = len(xml_content)
+
+        use_streaming = force_streaming or file_size > STREAMING_THRESHOLD
+
+        if use_streaming:
+            logger.info(f"Using streaming parser for large file ({file_size / 1024 / 1024:.1f}MB)")
+            return parse_rules_streaming(xml_content)
+        else:
+            logger.info(f"Using regular parser for small file ({file_size / 1024:.1f}KB)")
+            return parse_rules(xml_content)
+
+    except Exception as e:
+        logger.error(f"Error in adaptive rules parsing: {str(e)}")
+        # Fallback to regular parser if streaming fails
+        if use_streaming:
+            logger.warning("Streaming parser failed, falling back to regular parser")
+            try:
+                return parse_rules(xml_content)
+            except Exception as fallback_error:
+                logger.error(f"Fallback parser also failed: {str(fallback_error)}")
+                raise ValueError(f"Both streaming and regular parsers failed: {str(e)}")
+        else:
+            raise ValueError(f"Failed to parse rules: {str(e)}")
+
+def parse_objects_adaptive(xml_content: bytes, force_streaming: bool = False) -> List[Dict[str, Any]]:
+    """
+    Parse objects using adaptive approach - streaming for large files, regular for small files.
+
+    Args:
+        xml_content: Raw XML content as bytes
+        force_streaming: Force use of streaming parser regardless of file size
+
+    Returns:
+        List of dictionaries containing object data
+    """
+    try:
+        # Define threshold for streaming (5MB)
+        STREAMING_THRESHOLD = 5 * 1024 * 1024  # 5MB
+        file_size = len(xml_content)
+
+        use_streaming = force_streaming or file_size > STREAMING_THRESHOLD
+
+        if use_streaming:
+            logger.info(f"Using streaming parser for large file ({file_size / 1024 / 1024:.1f}MB)")
+            return parse_objects_streaming(xml_content)
+        else:
+            logger.info(f"Using regular parser for small file ({file_size / 1024:.1f}KB)")
+            return parse_objects(xml_content)
+
+    except Exception as e:
+        logger.error(f"Error in adaptive objects parsing: {str(e)}")
+        # Fallback to regular parser if streaming fails
+        if use_streaming:
+            logger.warning("Streaming parser failed, falling back to regular parser")
+            try:
+                return parse_objects(xml_content)
+            except Exception as fallback_error:
+                logger.error(f"Fallback parser also failed: {str(fallback_error)}")
+                raise ValueError(f"Both streaming and regular parsers failed: {str(e)}")
+        else:
+            raise ValueError(f"Failed to parse objects: {str(e)}")
