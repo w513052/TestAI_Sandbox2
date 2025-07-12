@@ -368,12 +368,28 @@ def parse_incremental_set_rule(line: str, rules_dict: Dict[str, Dict[str, Any]])
     try:
         import re
 
-        # Extract rule name (quoted or unquoted)
-        name_match = re.search(r'set (?:rulebase )?security rules ["\']?([^"\']+)["\']?', line)
+        # Extract rule name (quoted or unquoted) - handle both formats
+        # Format 1: set security rules "Name" attribute value
+        # Format 2: set rulebase security rules Name attribute value
+        name_match = re.search(r'set (?:rulebase )?security rules ["\']?([^"\']+?)["\']?\s+(?:from|to|source|destination|service|action|application)', line)
         if not name_match:
-            return
+            # Fallback: try to extract just the rule name part
+            name_match = re.search(r'set (?:rulebase )?security rules ["\']?([^"\']+)["\']?', line)
+            if not name_match:
+                return
+            # Clean the rule name by removing attribute keywords
+            full_name = name_match.group(1).strip()
+            # Split on attribute keywords and take the first part
+            attribute_keywords = ['from', 'to', 'source', 'destination', 'service', 'action', 'application']
+            rule_name = full_name
+            for keyword in attribute_keywords:
+                if ' ' + keyword + ' ' in ' ' + full_name + ' ':
+                    rule_name = full_name.split(' ' + keyword)[0].strip()
+                    break
+        else:
+            rule_name = name_match.group(1).strip()
 
-        rule_name = name_match.group(1).strip()
+        logger.debug(f"Extracted rule name: '{rule_name}' from line: {line}")
 
         # Initialize rule if not exists
         if rule_name not in rules_dict:

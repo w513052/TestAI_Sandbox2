@@ -1,0 +1,136 @@
+set address Server-Web-01 ip-netmask 192.168.10.10/32
+set address Server-DB-01 ip-netmask 192.168.10.20/32
+set address Workstation-01 ip-netmask 192.168.20.10/32
+set address Workstation-02 ip-netmask 192.168.20.11/32
+set address DMZ-Host-01 ip-netmask 172.16.10.5/32
+set address DMZ-Host-02 ip-netmask 172.16.10.6/32
+set address External-Server-01 ip-netmask 203.0.113.10/32
+set address Guest-Network ip-netmask 192.168.40.0/24
+set address Internal-Subnet-01 ip-netmask 192.168.30.0/24
+set address Internal-Subnet-02 ip-netmask 192.168.31.0/24
+set address Backup-Server-01 ip-netmask 192.168.50.10/32
+set address Monitoring-Host-01 ip-netmask 192.168.60.5/32
+set address Server-Web-01-Redundant ip-netmask 192.168.10.10/32
+set address Server-DB-01-Redundant ip-netmask 192.168.10.20/32
+set address Internal-Subnet-01-Redundant ip-netmask 192.168.30.0/24
+set address DMZ-Host-01-Redundant ip-netmask 172.16.10.5/32
+set address Workstation-01-Redundant ip-netmask 192.168.20.10/32
+
+set rulebase security rules Allow-Web-Access from trust
+set rulebase security rules Allow-Web-Access to untrust
+set rulebase security rules Allow-Web-Access source Server-Web-01
+set rulebase security rules Allow-Web-Access destination any
+set rulebase security rules Allow-Web-Access service service-http
+set rulebase security rules Allow-Web-Access action allow
+
+set rulebase security rules Allow-DB-Access from trust
+set rulebase security rules Allow-DB-Access to dmz
+set rulebase security rules Allow-DB-Access source Server-DB-01
+set rulebase security rules Allow-DB-Access destination any
+set rulebase security rules Allow-DB-Access service service-mysql
+set rulebase security rules Allow-DB-Access action allow
+
+set rulebase security rules Workstation-Outbound from trust
+set rulebase security rules Workstation-Outbound to untrust
+set rulebase security rules Workstation-Outbound source Workstation-01
+set rulebase security rules Workstation-Outbound destination any
+set rulebase security rules Workstation-Outbound service any
+set rulebase security rules Workstation-Outbound action allow
+
+set rulebase security rules Workstation-Internal from trust
+set rulebase security rules Workstation-Internal to trust
+set rulebase security rules Workstation-Internal source Workstation-02
+set rulebase security rules Workstation-Internal destination Internal-Subnet-01
+set rulebase security rules Workstation-Internal service any
+set rulebase security rules Workstation-Internal action allow
+
+set rulebase security rules DMZ-Web-Access from dmz
+set rulebase security rules DMZ-Web-Access to untrust
+set rulebase security rules DMZ-Web-Access source DMZ-Host-01
+set rulebase security rules DMZ-Web-Access destination any
+set rulebase security rules DMZ-Web-Access service service-http
+set rulebase security rules DMZ-Web-Access action allow
+
+set rulebase security rules DMZ-Internal-Access from dmz
+set rulebase security rules DMZ-Internal-Access to trust
+set rulebase security rules DMZ-Internal-Access source DMZ-Host-02
+set rulebase security rules DMZ-Internal-Access destination Internal-Subnet-02
+set rulebase security rules DMZ-Internal-Access service any
+set rulebase security rules DMZ-Internal-Access action allow
+
+set rulebase security rules Guest-Internet from guest
+set rulebase security rules Guest-Internet to untrust
+set rulebase security rules Guest-Internet source Guest-Network
+set rulebase security rules Guest-Internet destination any
+set rulebase security rules Guest-Internet service service-http
+set rulebase security rules Guest-Internet action allow
+
+set rulebase security rules External-to-DMZ from untrust
+set rulebase security rules External-to-DMZ to dmz
+set rulebase security rules External-to-DMZ source External-Server-01
+set rulebase security rules External-to-DMZ destination DMZ-Host-01
+set rulebase security rules External-to-DMZ service service-https
+set rulebase security rules External-to-DMZ action allow
+
+set rulebase security rules Internal-Communication from trust
+set rulebase security rules Internal-Communication to trust
+set rulebase security rules Internal-Communication source Internal-Subnet-01
+set rulebase security rules Internal-Communication destination Internal-Subnet-02
+set rulebase security rules Internal-Communication service any
+set rulebase security rules Internal-Communication action allow
+
+set rulebase security rules Deny-All from any
+set rulebase security rules Deny-All to any
+set rulebase security rules Deny-All source any
+set rulebase security rules Deny-All destination any
+set rulebase security rules Deny-All service any
+set rulebase security rules Deny-All action deny
+
+set rulebase security rules Allow-Web-Access-Redundant-1 from trust
+set rulebase security rules Allow-Web-Access-Redundant-1 to untrust
+set rulebase security rules Allow-Web-Access-Redundant-1 source Server-Web-01
+set rulebase security rules Allow-Web-Access-Redundant-1 destination any
+set rulebase security rules Allow-Web-Access-Redundant-1 service service-http
+set rulebase security rules Allow-Web-Access-Redundant-1 action allow
+
+set rulebase security rules Allow-Web-Access-Redundant-2 from trust
+set rulebase security rules Allow-Web-Access-Redundant-2 to untrust
+set rulebase security rules Allow-Web-Access-Redundant-2 source Server-Web-01
+set rulebase security rules Allow-Web-Access-Redundant-2 destination any
+set rulebase security rules Allow-Web-Access-Redundant-2 service service-http
+set rulebase security rules Allow-Web-Access-Redundant-2 action allow
+
+set rulebase security rules Allow-Web-Access-Redundant-3 from trust
+set rulebase security rules Allow-Web-Access-Redundant-3 to untrust
+set rulebase security rules Allow-Web-Access-Redundant-3 source Server-Web-01
+set rulebase security rules Allow-Web-Access-Redundant-3 destination any
+set rulebase security rules Allow-Web-Access-Redundant-3 service service-http
+set rulebase security rules Allow-Web-Access-Redundant-3 action allow
+
+set rulebase security rules Allow-Web-Access-Redundant-4 from trust
+set rulebase security rules Allow-Web-Access-Redundant-4 to untrust
+set rulebase security rules Allow-Web-Access-Redundant-4 source Server-Web-01
+set rulebase security rules Allow-Web-Access-Redundant-4 destination any
+set rulebase security rules Allow-Web-Access-Redundant-4 service service-http
+set rulebase security rules Allow-Web-Access-Redundant-4 action allow
+
+set rulebase security rules Allow-Web-Access-Redundant-5 from trust
+set rulebase security rules Allow-Web-Access-Redundant-5 to untrust
+set rulebase security rules Allow-Web-Access-Redundant-5 source Server-Web-01
+set rulebase security rules Allow-Web-Access-Redundant-5 destination any
+set rulebase security rules Allow-Web-Access-Redundant-5 service service-http
+set rulebase security rules Allow-Web-Access-Redundant-5 action allow
+
+set rulebase security rules Allow-DB-Access-Duplicate-1 from trust
+set rulebase security rules Allow-DB-Access-Duplicate-1 to dmz
+set rulebase security rules Allow-DB-Access-Duplicate-1 source Server-DB-01
+set rulebase security rules Allow-DB-Access-Duplicate-1 destination any
+set rulebase security rules Allow-DB-Access-Duplicate-1 service service-mysql
+set rulebase security rules Allow-DB-Access-Duplicate-1 action allow
+
+set rulebase security rules Allow-DB-Access-Duplicate-2 from trust
+set rulebase security rules Allow-DB-Access-Duplicate-2 to dmz
+set rulebase security rules Allow-DB-Access-Duplicate-2 source Server-DB-01
+set rulebase security rules Allow-DB-Access-Duplicate-2 destination any
+set rulebase security rules Allow-DB-Access-Duplicate-2 service service-mysql
+set rulebase security rules Allow-DB-Access-Duplicate-2 action allow
