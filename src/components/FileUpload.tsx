@@ -187,19 +187,34 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileAnalysis }) => {
       }
 
       const result = await response.json();
+      const auditId = result.data.audit_id;
+
+      console.log('File uploaded successfully, audit ID:', auditId);
+      console.log('Fetching analysis results...');
+
+      // Now fetch the analysis results
+      const analysisResponse = await fetch(`http://127.0.0.1:8000/api/v1/audits/${auditId}/analysis`);
+
+      if (!analysisResponse.ok) {
+        throw new Error(`Analysis failed: ${analysisResponse.status}`);
+      }
+
+      const analysisResult = await analysisResponse.json();
+      console.log('Analysis results:', analysisResult);
 
       // Convert backend response to frontend format
       const totalObjects = (result.data.metadata.address_object_count || 0) + (result.data.metadata.service_object_count || 0);
+      const analysisData = analysisResult.data;
 
-      const analysisData = {
+      const frontendAnalysisData = {
         summary: {
           totalRules: result.data.metadata.rules_parsed || 0,
           totalObjects: totalObjects,
-          duplicateRules: 0, // TODO: Implement in backend
-          shadowedRules: 0,  // TODO: Implement in backend
-          unusedRules: 0,    // TODO: Implement in backend
-          overlappingRules: 0, // TODO: Implement in backend
-          unusedObjects: 0,  // TODO: Implement in backend
+          duplicateRules: analysisData.duplicateRules?.length || 0,
+          shadowedRules: analysisData.shadowedRules?.length || 0,
+          unusedRules: analysisData.unusedRules?.length || 0,
+          overlappingRules: analysisData.overlappingRules?.length || 0,
+          unusedObjects: analysisData.unusedObjects?.length || 0,
           redundantObjects: 0, // TODO: Implement in backend
           analysisDate: result.data.start_time,
           configVersion: result.data.metadata.firmware_version || 'Unknown',
@@ -207,25 +222,25 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileAnalysis }) => {
           fileName: result.data.filename,
           fileHash: result.data.file_hash,
         },
-        // For now, use empty arrays - these will be populated when we implement analysis logic
-        duplicateRules: [],
-        shadowedRules: [],
-        unusedRules: [],
-        overlappingRules: [],
-        unusedObjects: [],
+        // Use real analysis data from backend
+        duplicateRules: analysisData.duplicateRules || [],
+        shadowedRules: analysisData.shadowedRules || [],
+        unusedRules: analysisData.unusedRules || [],
+        overlappingRules: analysisData.overlappingRules || [],
+        unusedObjects: analysisData.unusedObjects || [],
         recommendations: [
           {
             category: 'parsing',
             priority: 'info',
-            title: `Successfully parsed ${result.data.metadata.rules_parsed} rules`,
-            description: `Configuration file processed successfully with ${result.data.metadata.address_object_count} address objects and ${result.data.metadata.service_object_count} service objects`,
-            impact: 'File parsing completed - ready for detailed analysis'
+            title: `Successfully parsed ${result.data.metadata.rules_parsed} rules and ${totalObjects} objects`,
+            description: `Found ${analysisData.unusedObjects?.length || 0} unused objects and ${analysisData.unusedRules?.length || 0} unused rules`,
+            impact: 'Analysis completed - review findings for optimization opportunities'
           }
         ]
       };
 
       setIsAnalyzing(false);
-      onFileAnalysis(analysisData, file.name);
+      onFileAnalysis(frontendAnalysisData, file.name);
     } catch (error) {
       console.error('File upload failed:', error);
       console.error('Error details:', {
