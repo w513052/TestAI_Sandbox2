@@ -114,45 +114,124 @@ async def create_audit_session(
                 }
             )
         
-        # Create audit session
-        audit_session = AuditSession(
-            session_name=session_name or f"Audit_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
-            filename=file.filename,
-            file_hash=file_hash,
-            start_time=datetime.utcnow(),
-            config_metadata=config_metadata
-        )
+        # Create audit session with enhanced validation and error handling
+        try:
+            # Validate session name length
+            final_session_name = session_name or f"Audit_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+            if len(final_session_name) > 255:
+                final_session_name = final_session_name[:255]
+                logger.warning(f"Session name truncated to 255 characters: {final_session_name}")
+
+            # Validate filename
+            if not file.filename or len(file.filename) > 255:
+                logger.warning(f"Invalid filename: {file.filename}")
+                safe_filename = (file.filename or "unknown_file")[:255]
+            else:
+                safe_filename = file.filename
+
+            # Create audit session record
+            audit_session = AuditSession(
+                session_name=final_session_name,
+                filename=safe_filename,
+                file_hash=file_hash,
+                start_time=datetime.utcnow(),
+                config_metadata=config_metadata or {}
+            )
+
+            # Store audit session in database with transaction management
+            db.add(audit_session)
+            db.commit()
+            db.refresh(audit_session)
+
+            audit_id = audit_session.id
+            logger.info(f"Audit session created successfully with ID: {audit_id}, Name: '{final_session_name}', File: '{safe_filename}'")
+
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Failed to create audit session: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error_code": "DATABASE_ERROR",
+                    "message": "Failed to create audit session in database"
+                }
+            )
         
-        db.add(audit_session)
-        db.commit()
-        db.refresh(audit_session)
+        # Store parsed rules with enhanced error handling
+        try:
+            if rules_data:
+                rules_stored = 0
+                for rule_data in rules_data:
+                    try:
+                        rule = FirewallRule(
+                            audit_id=audit_id,
+                            **rule_data
+                        )
+                        db.add(rule)
+                        rules_stored += 1
+                    except Exception as e:
+                        logger.error(f"Failed to store rule '{rule_data.get('rule_name', 'unknown')}': {str(e)}")
+                        # Continue with other rules instead of failing completely
+                        continue
+
+                logger.info(f"Successfully stored {rules_stored} out of {len(rules_data)} rules")
+            else:
+                logger.info("No rules to store")
+
+        except Exception as e:
+            logger.error(f"Error during rules storage: {str(e)}")
+            # Don't fail the entire operation if rules storage fails
+            pass
         
-        audit_id = audit_session.id
-        logger.info(f"Audit session created with ID: {audit_id}")
-        
-        # Store parsed rules
-        if rules_data:
-            for rule_data in rules_data:
-                rule = FirewallRule(
-                    audit_id=audit_id,
-                    **rule_data
-                )
-                db.add(rule)
-            
-            logger.info(f"Stored {len(rules_data)} rules")
-        
-        # Store parsed objects
-        if objects_data:
-            for object_data in objects_data:
-                obj = ObjectDefinition(
-                    audit_id=audit_id,
-                    **object_data
-                )
-                db.add(obj)
-            
-            logger.info(f"Stored {len(objects_data)} objects")
-        
-        db.commit()
+        # Store parsed objects with enhanced error handling
+        try:
+            if objects_data:
+                objects_stored = 0
+                for object_data in objects_data:
+                    try:
+                        obj = ObjectDefinition(
+                            audit_id=audit_id,
+                            **object_data
+                        )
+                        db.add(obj)
+                        objects_stored += 1
+                    except Exception as e:
+                        logger.error(f"Failed to store object '{object_data.get('name', 'unknown')}': {str(e)}")
+                        # Continue with other objects instead of failing completely
+                        continue
+
+                logger.info(f"Successfully stored {objects_stored} out of {len(objects_data)} objects")
+            else:
+                logger.info("No objects to store")
+
+        except Exception as e:
+            logger.error(f"Error during objects storage: {str(e)}")
+            # Don't fail the entire operation if objects storage fails
+            pass
+
+        # Final commit for all data
+        try:
+            db.commit()
+            logger.info(f"Database transaction committed successfully for audit session {audit_id}")
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Failed to commit database transaction: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error_code": "DATABASE_COMMIT_ERROR",
+                    "message": "Failed to save parsed data to database"
+                }
+            )
+
+        # Update audit session with end time to mark completion
+        try:
+            audit_session.end_time = datetime.utcnow()
+            db.commit()
+            logger.info(f"Audit session {audit_id} marked as completed")
+        except Exception as e:
+            logger.warning(f"Failed to update end_time for audit session {audit_id}: {str(e)}")
+            # Don't fail the operation if end_time update fails
         
         # Prepare response
         response_data = {
