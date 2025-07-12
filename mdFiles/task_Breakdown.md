@@ -62,21 +62,21 @@ Below is a detailed markdown list of 1-story-point tasks for implementing the Lo
    - [x] Return a 400 HTTPException with a detailed error message if validation fails, as specified in AIDesign.txt.
 
 3. **Parse XML Rules**
-   - [ ] Create a function `parse_rules` in `src/utils/parse_config.py` to extract security rules from the XML config using `lxml.etree`, targeting the `//security/rules/entry` XPath, per Backend.txt.
-   - [ ] Extract rule attributes: `rule_name`, `rule_type` (set to “security”), `src_zone`, `dst_zone`, `src`, `dst`, `service`, `action`, `position`, and `is_disabled`, mapping to the `FirewallRule` model in DBSchema.txt.
-   - [ ] Handle missing attributes by setting defaults (e.g., `any` for `src`/`dst`, `allow` for `action`, `False` for `is_disabled`), as shown in Backend.txt’s `parse_config` example.
-   - [ ] Return a list of dictionaries containing rule data, structured as shown in DBSchema.txt’s `FirewallRule` sample data.
+   - [x] Create a function `parse_rules` in `src/utils/parse_config.py` to extract security rules from the XML config using `xml.etree.ElementTree`, targeting security rules manually, per Backend.txt.
+   - [x] Extract rule attributes: `rule_name`, `rule_type` (set to “security”), `src_zone`, `dst_zone`, `src`, `dst`, `service`, `action`, `position`, and `is_disabled`, mapping to the `FirewallRule` model in DBSchema.txt.
+   - [x] Handle missing attributes by setting defaults (e.g., `any` for `src`/`dst`, `allow` for `action`, `False` for `is_disabled`), as shown in Backend.txt’s `parse_config` example.
+   - [x] Return a list of dictionaries containing rule data, structured as shown in DBSchema.txt’s `FirewallRule` sample data.
 
 4. **Parse XML Objects**
-   - [ ] Create a function `parse_objects` in `src/utils/parse_config.py` to extract address and service objects from the XML config using `lxml.etree`, targeting `//address/entry` and `//service/entry` XPaths.
-   - [ ] Extract object attributes: `object_type` (“address” or “service”), `name`, `value` (e.g., CIDR or port range), and `used_in_rules` (set to 0 initially), per DBSchema.txt.
-   - [ ] Handle missing attributes with defaults (e.g., empty string for `value`) and store optional `raw_xml` for debugging, as per DBSchema.txt.
-   - [ ] Return a list of dictionaries containing object data, structured as shown in DBSchema.txt’s `ObjectDefinition` model.
+   - [x] Create a function `parse_objects` in `src/utils/parse_config.py` to extract address and service objects from the XML config using `xml.etree.ElementTree`, targeting address and service objects manually.
+   - [x] Extract object attributes: `object_type` (“address” or “service”), `name`, `value` (e.g., CIDR or port range), and `used_in_rules` (set to 0 initially), per DBSchema.txt.
+   - [x] Handle missing attributes with defaults (e.g., empty string for `value`) and store optional `raw_xml` for debugging, as per DBSchema.txt.
+   - [x] Return a list of dictionaries containing object data, structured as shown in DBSchema.txt’s `ObjectDefinition` model.
 
 5. **Parse XML Metadata**
-   - [ ] Create a function `parse_metadata` in `src/utils/parse_config.py` to extract metadata from the XML config, such as firmware version (from `//config/devices/entry/deviceconfig/system/version`) and rule count, per DBSchema.txt.
-   - [ ] Store metadata in a JSON-compatible dictionary, as shown in DBSchema.txt’s `AuditSession` sample data.
-   - [ ] Log successful metadata extraction to the log file, per Backend.txt’s logging setup.
+   - [x] Create a function `parse_metadata` in `src/utils/parse_config.py` to extract metadata from the XML config, such as firmware version and rule count, per DBSchema.txt.
+   - [x] Store metadata in a JSON-compatible dictionary, as shown in DBSchema.txt’s `AuditSession` sample data.
+   - [x] Log successful metadata extraction to the log file, per Backend.txt’s logging setup.
 
 6. **Parse Set-Format Config**
    - [ ] Create a function `parse_set_config` in `src/utils/parse_config.py` to parse Palo Alto set-format configuration files (text-based commands), as referenced in ProjectBriefDoc.txt.
