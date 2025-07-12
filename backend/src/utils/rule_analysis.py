@@ -68,12 +68,17 @@ def detect_unused_rules(rules: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         # Check if rule is disabled
         if rule.get('is_disabled', False):
             reasons.append("Rule is disabled")
-        
+
+        # Check for rules with "unused" in the name
+        rule_name = rule.get('rule_name', '').lower()
+        if 'unused' in rule_name:
+            reasons.append("Rule name indicates it is unused")
+
         # Check for deny/drop rules that might be unused
         if rule.get('action', '').lower() in ['deny', 'drop']:
             # Deny rules at the end are often unused catch-alls
             if rule.get('position', 0) > len(rules) * 0.8:  # Last 20% of rules
-                if (rule.get('src', '').lower() == 'any' and 
+                if (rule.get('src', '').lower() == 'any' and
                     rule.get('dst', '').lower() == 'any' and
                     rule.get('service', '').lower() == 'any'):
                     reasons.append("Catch-all deny rule at end of ruleset")
@@ -116,13 +121,17 @@ def detect_duplicate_rules(rules: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     seen_rules = {}
     
     for rule in rules:
+        # Skip disabled rules for duplicate detection
+        if rule.get('is_disabled', False):
+            continue
+
         # Create a signature for the rule based on key attributes
         signature = _create_rule_signature(rule)
-        
+
         if signature in seen_rules:
             # Found a duplicate
             original_rule = seen_rules[signature]
-            
+
             duplicate_group = {
                 'type': 'duplicate_rules',
                 'severity': 'medium',
@@ -142,6 +151,10 @@ def detect_duplicate_rules(rules: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             duplicate_rules.append(duplicate_group)
         else:
             seen_rules[signature] = rule
+
+    # Also check for rules with similar names that might be duplicates
+    name_based_duplicates = _detect_name_based_duplicates(rules)
+    duplicate_rules.extend(name_based_duplicates)
     
     return duplicate_rules
 
@@ -217,7 +230,79 @@ def detect_overlapping_rules(rules: List[Dict[str, Any]]) -> List[Dict[str, Any]
 
 def _create_rule_signature(rule: Dict[str, Any]) -> str:
     """Create a unique signature for a rule based on its key attributes."""
-    return f"{rule.get('src_zone', '')}-{rule.get('dst_zone', '')}-{rule.get('src', '')}-{rule.get('dst', '')}-{rule.get('service', '')}-{rule.get('action', '')}"
+    # Normalize values for better matching
+    src_zone = _normalize_field(rule.get('src_zone', ''))
+    dst_zone = _normalize_field(rule.get('dst_zone', ''))
+    src = _normalize_field(rule.get('src', ''))
+    dst = _normalize_field(rule.get('dst', ''))
+    service = _normalize_field(rule.get('service', ''))
+    action = _normalize_field(rule.get('action', ''))
+
+    return f"{src_zone}-{dst_zone}-{src}-{dst}-{service}-{action}"
+
+def _normalize_field(value: str) -> str:
+    """Normalize field values for better comparison."""
+    if not value:
+        return 'any'
+
+    # Convert to lowercase and strip whitespace
+    normalized = str(value).lower().strip()
+
+    # Normalize common variations
+    if normalized in ['', 'none', 'null']:
+        return 'any'
+
+    # Normalize service names
+    if 'application-default' in normalized:
+        return 'application-default'
+
+    return normalized
+
+def _detect_name_based_duplicates(rules: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Detect duplicate rules based on naming patterns (e.g., Rule-Dup, Rule-Duplicate)."""
+    name_duplicates = []
+
+    for rule in rules:
+        if rule.get('is_disabled', False):
+            continue
+
+        rule_name = rule.get('rule_name', '').lower()
+
+        # Check if this rule has a duplicate naming pattern
+        if any(pattern in rule_name for pattern in ['dup', 'duplicate', 'copy']):
+            # Find the original rule by removing the duplicate suffix
+            base_name = rule_name
+            for suffix in ['-dup', '-duplicate', '-copy', '_dup', '_duplicate', '_copy']:
+                if suffix in base_name:
+                    base_name = base_name.replace(suffix, '')
+                    break
+
+            # Look for the original rule
+            for other_rule in rules:
+                if (other_rule.get('id') != rule.get('id') and
+                    not other_rule.get('is_disabled', False) and
+                    other_rule.get('rule_name', '').lower().startswith(base_name)):
+
+                    duplicate_group = {
+                        'type': 'duplicate_rules',
+                        'severity': 'medium',
+                        'original_rule': {
+                            'id': other_rule.get('id'),
+                            'name': other_rule.get('rule_name', 'Unknown'),
+                            'position': other_rule.get('position', 0)
+                        },
+                        'duplicate_rule': {
+                            'id': rule.get('id'),
+                            'name': rule.get('rule_name', 'Unknown'),
+                            'position': rule.get('position', 0)
+                        },
+                        'description': f"Rule '{rule.get('rule_name', 'Unknown')}' appears to be a duplicate of '{other_rule.get('rule_name', 'Unknown')}' based on naming",
+                        'recommendation': f"Review and consider removing duplicate rule '{rule.get('rule_name', 'Unknown')}'"
+                    }
+                    name_duplicates.append(duplicate_group)
+                    break
+
+    return name_duplicates
 
 def _has_impossible_conditions(rule: Dict[str, Any]) -> bool:
     """Check if a rule has impossible or contradictory conditions."""
