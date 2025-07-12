@@ -533,8 +533,17 @@ def store_objects(db_session, audit_id: int, objects_data: List[Dict[str, Any]])
     try:
         from src.models import ObjectDefinition
 
+        # Valid object types for validation
+        valid_object_types = ['address', 'service', 'application', 'schedule', 'tag']
+
+        # Track object statistics
+        object_stats = {'address': 0, 'service': 0, 'other': 0}
+        duplicate_names = set()
+
         # Validate and prepare objects for batch insert
         validated_objects = []
+        seen_objects = set()  # Track duplicates within this batch
+
         for i, object_data in enumerate(objects_data):
             try:
                 # Validate required fields
@@ -544,10 +553,23 @@ def store_objects(db_session, audit_id: int, objects_data: List[Dict[str, Any]])
                         logger.error(f"Missing required field '{field}' in object {i}")
                         continue
 
+                # Validate object type
+                object_type = object_data.get('object_type', 'unknown').lower()
+                if object_type not in valid_object_types:
+                    logger.warning(f"Unknown object type '{object_type}' for object '{object_data.get('name', 'unknown')}', storing as-is")
+
+                # Check for duplicates within this batch
+                object_key = (object_type, object_data.get('name', ''))
+                if object_key in seen_objects:
+                    duplicate_names.add(object_data.get('name', f'object_{i}'))
+                    logger.warning(f"Duplicate object found in batch: {object_key}")
+                    continue
+                seen_objects.add(object_key)
+
                 # Prepare object data with audit_id
                 object_record = {
                     'audit_id': audit_id,
-                    'object_type': object_data.get('object_type', 'unknown')[:50],
+                    'object_type': object_type[:50],
                     'name': object_data.get('name', f'object_{i}')[:255],
                     'value': object_data.get('value', ''),  # Text field, no length limit
                     'used_in_rules': object_data.get('used_in_rules', 0),
@@ -556,6 +578,12 @@ def store_objects(db_session, audit_id: int, objects_data: List[Dict[str, Any]])
 
                 validated_objects.append(object_record)
 
+                # Update statistics
+                if object_type in object_stats:
+                    object_stats[object_type] += 1
+                else:
+                    object_stats['other'] += 1
+
             except Exception as e:
                 logger.error(f"Error validating object {i} '{object_data.get('name', 'unknown')}': {str(e)}")
                 continue
@@ -563,6 +591,12 @@ def store_objects(db_session, audit_id: int, objects_data: List[Dict[str, Any]])
         if not validated_objects:
             logger.warning("No valid objects to store after validation")
             return 0
+
+        # Log object statistics
+        logger.info(f"Object validation completed: {len(validated_objects)} valid objects")
+        logger.info(f"Object breakdown: Address={object_stats['address']}, Service={object_stats['service']}, Other={object_stats['other']}")
+        if duplicate_names:
+            logger.warning(f"Found {len(duplicate_names)} duplicate object names: {list(duplicate_names)[:5]}...")
 
         # Perform batch insert
         logger.info(f"Performing batch insert of {len(validated_objects)} objects")
@@ -576,3 +610,58 @@ def store_objects(db_session, audit_id: int, objects_data: List[Dict[str, Any]])
     except Exception as e:
         logger.error(f"Database error during objects storage: {str(e)}")
         raise Exception(f"Failed to store objects: {str(e)}")
+
+def analyze_object_usage(rules_data: List[Dict[str, Any]], objects_data: List[Dict[str, Any]]) -> Dict[str, int]:
+    """
+    Analyze which objects are used in rules and update usage counts.
+
+    Args:
+        rules_data: List of parsed rules
+        objects_data: List of parsed objects
+
+    Returns:
+        Dictionary mapping object names to usage counts
+    """
+    try:
+        # Create a mapping of object names for quick lookup
+        object_usage = {}
+        object_names = {obj.get('name', '') for obj in objects_data}
+
+        # Initialize usage counts
+        for obj in objects_data:
+            object_usage[obj.get('name', '')] = 0
+
+        # Analyze rule references to objects
+        for rule in rules_data:
+            # Check source references
+            src = rule.get('src', '')
+            if src in object_names:
+                object_usage[src] += 1
+
+            # Check destination references
+            dst = rule.get('dst', '')
+            if dst in object_names:
+                object_usage[dst] += 1
+
+            # Check service references
+            service = rule.get('service', '')
+            if service in object_names:
+                object_usage[service] += 1
+
+        # Update objects_data with usage counts
+        for obj in objects_data:
+            obj_name = obj.get('name', '')
+            if obj_name in object_usage:
+                obj['used_in_rules'] = object_usage[obj_name]
+
+        # Log usage statistics
+        used_objects = sum(1 for count in object_usage.values() if count > 0)
+        unused_objects = len(object_usage) - used_objects
+
+        logger.info(f"Object usage analysis completed: {used_objects} used, {unused_objects} unused objects")
+
+        return object_usage
+
+    except Exception as e:
+        logger.error(f"Error analyzing object usage: {str(e)}")
+        return {}

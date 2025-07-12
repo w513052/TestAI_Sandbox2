@@ -10,7 +10,8 @@ from src.utils.parse_config import (
     parse_metadata,
     parse_set_config,
     store_rules,
-    store_objects
+    store_objects,
+    analyze_object_usage
 )
 from src.utils.logging import logger
 from datetime import datetime
@@ -159,6 +160,15 @@ async def create_audit_session(
                 }
             )
         
+        # Analyze object usage in rules before storage
+        try:
+            if rules_data and objects_data:
+                object_usage = analyze_object_usage(rules_data, objects_data)
+                logger.info(f"Object usage analysis completed for {len(object_usage)} objects")
+        except Exception as e:
+            logger.warning(f"Object usage analysis failed: {str(e)}")
+            # Continue without usage analysis
+
         # Store parsed rules using batch operations
         try:
             rules_stored = store_rules(db, audit_id, rules_data)
@@ -167,7 +177,7 @@ async def create_audit_session(
             logger.error(f"Error during batch rules storage: {str(e)}")
             # Don't fail the entire operation if rules storage fails
             rules_stored = 0
-        
+
         # Store parsed objects using batch operations
         try:
             objects_stored = store_objects(db, audit_id, objects_data)
