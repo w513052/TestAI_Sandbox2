@@ -1,7 +1,40 @@
 import hashlib
 import xml.etree.ElementTree as ET
+import time
+import psutil
+import os
 from typing import List, Dict, Any
 from src.utils.logging import logger
+
+try:
+    from lxml import etree as lxml_etree
+    LXML_AVAILABLE = True
+    logger.info("lxml is available for streaming XML parsing")
+except ImportError:
+    LXML_AVAILABLE = False
+    logger.warning("lxml not available, falling back to standard library for streaming parsing")
+
+def get_memory_usage():
+    """Get current memory usage in MB."""
+    try:
+        process = psutil.Process(os.getpid())
+        return process.memory_info().rss / 1024 / 1024  # Convert to MB
+    except:
+        return 0
+
+def log_parsing_performance(start_time: float, start_memory: float, item_count: int, item_type: str):
+    """Log parsing performance metrics."""
+    end_time = time.time()
+    end_memory = get_memory_usage()
+
+    duration = end_time - start_time
+    memory_used = end_memory - start_memory
+
+    logger.info(f"Streaming {item_type} parsing completed:")
+    logger.info(f"  - Items processed: {item_count}")
+    logger.info(f"  - Time taken: {duration:.2f} seconds")
+    logger.info(f"  - Memory used: {memory_used:.2f} MB")
+    logger.info(f"  - Processing rate: {item_count/duration:.1f} items/second")
 
 def validate_xml_file(file_content: bytes) -> bool:
     """
@@ -874,6 +907,7 @@ def analyze_object_usage(rules_data: List[Dict[str, Any]], objects_data: List[Di
 def parse_rules_streaming(xml_content: bytes) -> List[Dict[str, Any]]:
     """
     Extract security rules from XML config using streaming parser for large files.
+    Uses lxml.etree.iterparse for memory-efficient processing.
 
     Args:
         xml_content: Raw XML content as bytes
@@ -884,29 +918,43 @@ def parse_rules_streaming(xml_content: bytes) -> List[Dict[str, Any]]:
     Raises:
         ValueError: If XML parsing fails
     """
+    start_time = time.time()
+    start_memory = get_memory_usage()
+
     try:
         import io
-        from xml.etree.ElementTree import iterparse
 
         rules = []
         xml_stream = io.BytesIO(xml_content)
+
+        # Use lxml if available, otherwise fall back to standard library
+        if LXML_AVAILABLE:
+            logger.info("Starting lxml streaming XML parsing for rules")
+            iterparse_func = lxml_etree.iterparse
+        else:
+            logger.info("Starting standard library streaming XML parsing for rules")
+            from xml.etree.ElementTree import iterparse
+            iterparse_func = iterparse
 
         # Track current context for nested parsing
         current_rule = None
         in_rules_section = False
         rule_depth = 0
-
-        logger.info("Starting streaming XML parsing for rules")
+        path_stack = []
 
         # Use iterparse for memory-efficient streaming
-        for event, elem in iterparse(xml_stream, events=('start', 'end')):
+        for event, elem in iterparse_func(xml_stream, events=('start', 'end')):
 
             if event == 'start':
+                path_stack.append(elem.tag)
+
                 # Detect when we enter a rules section
                 if elem.tag == 'rules':
                     # Check if we're in a security context by tracking the path
-                    in_rules_section = True
-                    logger.debug("Entered security rules section")
+                    path = '/'.join(path_stack)
+                    if 'security' in path.lower() or 'rulebase' in path.lower():
+                        in_rules_section = True
+                        logger.debug(f"Entered security rules section at path: {path}")
 
                 # Detect individual rule entries
                 elif elem.tag == 'entry' and in_rules_section:
@@ -927,17 +975,31 @@ def parse_rules_streaming(xml_content: bytes) -> List[Dict[str, Any]]:
                     rule_depth = 0
 
             elif event == 'end':
+                if path_stack:
+                    path_stack.pop()
+
                 # Process completed rule entry
                 if elem.tag == 'entry' and in_rules_section and current_rule is not None:
                     # Extract rule data from completed element
                     current_rule = _extract_rule_data_streaming(elem, current_rule)
-                    current_rule["raw_xml"] = ET.tostring(elem, encoding='unicode')
+                    if LXML_AVAILABLE:
+                        current_rule["raw_xml"] = lxml_etree.tostring(elem, encoding='unicode')
+                    else:
+                        current_rule["raw_xml"] = ET.tostring(elem, encoding='unicode')
 
                     rules.append(current_rule)
-                    logger.debug(f"Parsed rule: {current_rule['rule_name']}")
 
-                    # Clear memory by removing processed element
-                    elem.clear()
+                    # Log progress for large files
+                    if len(rules) % 100 == 0:
+                        logger.debug(f"Processed {len(rules)} rules...")
+
+                    # Clear the element to free memory (lxml feature)
+                    if LXML_AVAILABLE:
+                        elem.clear()
+                        # Also clear parent references to free memory
+                        while elem.getprevious() is not None:
+                            del elem.getparent()[0]
+                    logger.debug(f"Parsed rule: {current_rule['rule_name']}")
                     current_rule = None
 
                 # Exit rules section
@@ -945,9 +1007,12 @@ def parse_rules_streaming(xml_content: bytes) -> List[Dict[str, Any]]:
                     in_rules_section = False
                     logger.debug("Exited security rules section")
 
-                # Clear processed elements to save memory
-                elif elem.tag in ['devices', 'vsys', 'rulebase', 'security']:
+                # Clear processed elements to save memory (standard library)
+                elif not LXML_AVAILABLE and elem.tag in ['devices', 'vsys', 'rulebase', 'security']:
                     elem.clear()
+
+        # Log performance metrics
+        log_parsing_performance(start_time, start_memory, len(rules), "rules")
 
         logger.info(f"Streaming parser completed: {len(rules)} security rules parsed")
         return rules
@@ -1022,6 +1087,7 @@ def _extract_rule_data_streaming(rule_elem, rule_data: Dict[str, Any]) -> Dict[s
 def parse_objects_streaming(xml_content: bytes) -> List[Dict[str, Any]]:
     """
     Extract address and service objects from XML config using streaming parser for large files.
+    Uses lxml.etree.iterparse for memory-efficient processing.
 
     Args:
         xml_content: Raw XML content as bytes
@@ -1032,22 +1098,32 @@ def parse_objects_streaming(xml_content: bytes) -> List[Dict[str, Any]]:
     Raises:
         ValueError: If XML parsing fails
     """
+    start_time = time.time()
+    start_memory = get_memory_usage()
+
     try:
         import io
-        from xml.etree.ElementTree import iterparse
 
         objects = []
         xml_stream = io.BytesIO(xml_content)
+
+        # Use lxml if available, otherwise fall back to standard library
+        if LXML_AVAILABLE:
+            logger.info("Starting lxml streaming XML parsing for objects")
+            iterparse_func = lxml_etree.iterparse
+        else:
+            logger.info("Starting standard library streaming XML parsing for objects")
+            from xml.etree.ElementTree import iterparse
+            iterparse_func = iterparse
 
         # Track current context for nested parsing
         in_address_section = False
         in_service_section = False
         current_object = None
-
-        logger.info("Starting streaming XML parsing for objects")
+        path_stack = []
 
         # Use iterparse for memory-efficient streaming
-        for event, elem in iterparse(xml_stream, events=('start', 'end')):
+        for event, elem in iterparse_func(xml_stream, events=('start', 'end')):
 
             if event == 'start':
                 # Detect when we enter address or service sections
