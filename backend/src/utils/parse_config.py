@@ -75,14 +75,63 @@ def compute_file_hash(file_content: bytes) -> str:
     return hashlib.sha256(file_content).hexdigest()
 
 def parse_rules(xml_content: bytes) -> List[Dict[str, Any]]:
-    """
-    Extract security rules from XML config.
+    """Extract security rules from Palo Alto firewall XML configuration.
+
+    Parses firewall security rules from XML configuration files, extracting rule
+    attributes such as name, zones, sources, destinations, services, and actions.
+    Supports both streaming and regular parsing based on file size for optimal
+    performance.
 
     Args:
-        xml_content: Raw XML content as bytes
+        xml_content (bytes): Raw XML configuration content as bytes. Must be valid
+            XML format from Palo Alto firewall export.
 
     Returns:
-        List of dictionaries containing rule data
+        List[Dict[str, Any]]: List of dictionaries containing parsed rule data.
+            Each dictionary contains the following keys:
+            - rule_name (str): Name of the firewall rule
+            - rule_type (str): Type of rule (typically 'security')
+            - src_zone (str): Source security zone
+            - dst_zone (str): Destination security zone
+            - src (str): Source addresses/objects (comma-separated)
+            - dst (str): Destination addresses/objects (comma-separated)
+            - service (str): Service/port definitions (comma-separated)
+            - action (str): Rule action ('allow', 'deny', or 'drop')
+            - position (int): Rule position in the rulebase (1-based)
+            - is_disabled (bool): Whether the rule is disabled
+            - raw_xml (str): Original XML content for the rule
+
+    Raises:
+        ValueError: If xml_content is empty, None, or contains malformed XML.
+        Exception: For other parsing errors or system issues.
+
+    Example:
+        >>> xml_data = b'''<?xml version="1.0"?>
+        ... <config><devices><entry name="fw"><vsys><entry name="vsys1">
+        ... <rulebase><security><rules>
+        ... <entry name="Allow-Web">
+        ...   <from><member>trust</member></from>
+        ...   <to><member>untrust</member></to>
+        ...   <source><member>any</member></source>
+        ...   <destination><member>any</member></destination>
+        ...   <service><member>service-http</member></service>
+        ...   <action>allow</action>
+        ... </entry>
+        ... </rules></security></rulebase>
+        ... </entry></vsys></entry></devices></config>'''
+        >>> rules = parse_rules(xml_data)
+        >>> len(rules)
+        1
+        >>> rules[0]['rule_name']
+        'Allow-Web'
+        >>> rules[0]['action']
+        'allow'
+
+    Note:
+        - Uses adaptive parsing: streaming for large files (>10MB), regular for smaller files
+        - Automatically handles missing or malformed rule attributes with defaults
+        - Preserves original XML for each rule in the 'raw_xml' field
+        - Rule positions are automatically assigned based on order in XML
     """
     try:
         # Validate input
@@ -174,14 +223,59 @@ def parse_rules(xml_content: bytes) -> List[Dict[str, Any]]:
         raise ValueError(error_msg)
 
 def parse_objects(xml_content: bytes) -> List[Dict[str, Any]]:
-    """
-    Extract address and service objects from XML config.
+    """Extract address and service objects from Palo Alto firewall XML configuration.
+
+    Parses firewall object definitions including address objects (IP addresses,
+    networks, FQDNs) and service objects (TCP/UDP ports, protocols) from XML
+    configuration files. Uses adaptive parsing for optimal performance.
 
     Args:
-        xml_content: Raw XML content as bytes
+        xml_content (bytes): Raw XML configuration content as bytes. Must be valid
+            XML format from Palo Alto firewall export.
 
     Returns:
-        List of dictionaries containing object data
+        List[Dict[str, Any]]: List of dictionaries containing parsed object data.
+            Each dictionary contains the following keys:
+            - name (str): Name of the object
+            - object_type (str): Type of object ('address' or 'service')
+            - value (str): Object value (IP/network for address, port/protocol for service)
+            - used_in_rules (int): Number of rules referencing this object (default: 0)
+            - raw_xml (str): Original XML content for the object
+
+    Raises:
+        ValueError: If xml_content is empty, None, or contains malformed XML.
+        Exception: For other parsing errors or system issues.
+
+    Example:
+        >>> xml_data = b'''<?xml version="1.0"?>
+        ... <config><devices><entry name="fw"><vsys><entry name="vsys1">
+        ... <address>
+        ...   <entry name="Web-Server">
+        ...     <ip-netmask>192.168.1.10/32</ip-netmask>
+        ...   </entry>
+        ... </address>
+        ... <service>
+        ...   <entry name="HTTP-Service">
+        ...     <protocol><tcp><port>80</port></tcp></protocol>
+        ...   </entry>
+        ... </service>
+        ... </entry></vsys></entry></devices></config>'''
+        >>> objects = parse_objects(xml_data)
+        >>> len(objects)
+        2
+        >>> objects[0]['name']
+        'Web-Server'
+        >>> objects[0]['object_type']
+        'address'
+        >>> objects[0]['value']
+        '192.168.1.10/32'
+
+    Note:
+        - Supports multiple address types: ip-netmask, ip-range, fqdn
+        - Supports TCP and UDP service definitions with single ports and ranges
+        - Uses adaptive parsing: streaming for large files, regular for smaller files
+        - Automatically handles missing attributes with sensible defaults
+        - Object usage counts are initialized to 0 and updated by analysis functions
     """
     try:
         # Validate input
@@ -278,14 +372,56 @@ def parse_objects(xml_content: bytes) -> List[Dict[str, Any]]:
         raise ValueError(error_msg)
 
 def parse_metadata(xml_content: bytes) -> Dict[str, Any]:
-    """
-    Extract metadata from XML config.
+    """Extract configuration metadata from Palo Alto firewall XML configuration.
+
+    Analyzes the XML configuration to extract summary information including
+    firmware version, rule counts, object counts, and other configuration
+    statistics useful for reporting and analysis.
 
     Args:
-        xml_content: Raw XML content as bytes
+        xml_content (bytes): Raw XML configuration content as bytes. Must be valid
+            XML format from Palo Alto firewall export.
 
     Returns:
-        Dictionary containing metadata
+        Dict[str, Any]: Dictionary containing configuration metadata with the following keys:
+            - firmware_version (str): Detected firmware version or 'unknown'
+            - rule_count (int): Total number of security rules
+            - address_object_count (int): Number of address objects defined
+            - service_object_count (int): Number of service objects defined
+
+    Raises:
+        ValueError: If xml_content is empty, None, or contains malformed XML.
+        Exception: For other parsing errors or system issues.
+
+    Example:
+        >>> xml_data = b'''<?xml version="1.0"?>
+        ... <config version="10.1.0">
+        ... <devices><entry name="fw"><vsys><entry name="vsys1">
+        ... <address>
+        ...   <entry name="Server1"><ip-netmask>192.168.1.1/32</ip-netmask></entry>
+        ...   <entry name="Server2"><ip-netmask>192.168.1.2/32</ip-netmask></entry>
+        ... </address>
+        ... <service>
+        ...   <entry name="HTTP"><protocol><tcp><port>80</port></tcp></protocol></entry>
+        ... </service>
+        ... <rulebase><security><rules>
+        ...   <entry name="Rule1"><action>allow</action></entry>
+        ... </rules></security></rulebase>
+        ... </entry></vsys></entry></devices></config>'''
+        >>> metadata = parse_metadata(xml_data)
+        >>> metadata['rule_count']
+        1
+        >>> metadata['address_object_count']
+        2
+        >>> metadata['service_object_count']
+        1
+
+    Note:
+        - Firmware version is extracted from the config version attribute
+        - Counts are calculated by parsing the actual XML structure
+        - Returns 'unknown' for firmware version if not detectable
+        - All counts default to 0 if sections are not found
+        - Metadata is used for audit session tracking and reporting
     """
     try:
         # Validate input
@@ -360,14 +496,63 @@ def parse_metadata(xml_content: bytes) -> Dict[str, Any]:
         raise ValueError(error_msg)
 
 def parse_set_config(set_content: str) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
-    """
-    Parse Palo Alto set-format configuration files with support for incremental set commands.
+    """Parse Palo Alto set-format configuration files with incremental command support.
+
+    Parses firewall configurations in set-command format (CLI export format),
+    extracting security rules, address objects, and service objects. Supports
+    both full configurations and incremental set commands for configuration
+    updates and analysis.
 
     Args:
-        set_content: Raw set-format content as string
+        set_content (str): Raw set-format configuration content as string.
+            Contains 'set' commands in Palo Alto CLI format.
 
     Returns:
-        Tuple of (rules_data, objects_data, metadata)
+        tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
+            A tuple containing three elements:
+            1. rules_data: List of dictionaries with parsed security rules
+            2. objects_data: List of dictionaries with parsed objects
+            3. metadata: Dictionary with configuration metadata
+
+            Rules dictionaries contain the same structure as parse_rules():
+            - rule_name, rule_type, src_zone, dst_zone, src, dst, service,
+              action, position, is_disabled, raw_xml
+
+            Objects dictionaries contain the same structure as parse_objects():
+            - name, object_type, value, used_in_rules, raw_xml
+
+            Metadata dictionary contains:
+            - rule_count, address_object_count, service_object_count
+
+    Raises:
+        ValueError: If set_content is empty, None, or contains invalid set commands.
+        Exception: For other parsing errors or system issues.
+
+    Example:
+        >>> set_data = '''
+        ... set security rules Allow-Web from trust to untrust source any destination any service HTTP action allow
+        ... set address Web-Server ip-netmask 192.168.1.10/32
+        ... set service HTTP protocol tcp port 80
+        ... '''
+        >>> rules, objects, metadata = parse_set_config(set_data)
+        >>> len(rules)
+        1
+        >>> rules[0]['rule_name']
+        'Allow-Web'
+        >>> len(objects)
+        2
+        >>> objects[0]['name']
+        'Web-Server'
+        >>> metadata['rule_count']
+        1
+
+    Note:
+        - Supports standard set commands: 'set security rules', 'set address', 'set service'
+        - Output structure matches XML parser for consistency across formats
+        - Handles malformed commands gracefully with error logging
+        - Automatically assigns rule positions based on order in file
+        - Preserves original set command text in raw_xml field for traceability
+        - Supports disabled rules via 'disabled' keyword in set commands
     """
     try:
         # Preprocess content to handle different formats
@@ -776,13 +961,17 @@ def store_rules(db_session, audit_id: int, rules_data: List[Dict[str, Any]]) -> 
             logger.warning("No valid rules to store after validation")
             return 0
 
-        # Perform batch insert
+        # Perform batch insert with timing
+        import time
+        batch_start_time = time.time()
         logger.info(f"Performing batch insert of {len(validated_rules)} rules")
 
         # Use bulk_insert_mappings for better performance
         db_session.bulk_insert_mappings(FirewallRule, validated_rules)
 
-        logger.info(f"Successfully stored {len(validated_rules)} out of {len(rules_data)} rules")
+        batch_duration = time.time() - batch_start_time
+        rules_per_second = len(validated_rules) / batch_duration if batch_duration > 0 else 0
+        logger.info(f"Successfully stored {len(validated_rules)} out of {len(rules_data)} rules in {batch_duration:.3f}s ({rules_per_second:.1f} rules/sec)")
         return len(validated_rules)
 
     except Exception as e:
@@ -877,13 +1066,17 @@ def store_objects(db_session, audit_id: int, objects_data: List[Dict[str, Any]])
         if duplicate_names:
             logger.warning(f"Found {len(duplicate_names)} duplicate object names: {list(duplicate_names)[:5]}...")
 
-        # Perform batch insert
+        # Perform batch insert with timing
+        import time
+        batch_start_time = time.time()
         logger.info(f"Performing batch insert of {len(validated_objects)} objects")
 
         # Use bulk_insert_mappings for better performance
         db_session.bulk_insert_mappings(ObjectDefinition, validated_objects)
 
-        logger.info(f"Successfully stored {len(validated_objects)} out of {len(objects_data)} objects")
+        batch_duration = time.time() - batch_start_time
+        objects_per_second = len(validated_objects) / batch_duration if batch_duration > 0 else 0
+        logger.info(f"Successfully stored {len(validated_objects)} out of {len(objects_data)} objects in {batch_duration:.3f}s ({objects_per_second:.1f} objects/sec)")
         return len(validated_objects)
 
     except Exception as e:

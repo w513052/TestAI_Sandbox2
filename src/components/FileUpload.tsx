@@ -15,7 +15,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileAnalysis }) => {
   React.useEffect(() => {
     const testBackend = async () => {
       try {
-        const response = await fetch('http://127.0.0.1:8000/health');
+        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/health`);
         if (response.ok) {
           setBackendStatus('connected');
           console.log('Backend connection successful');
@@ -172,7 +172,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileAnalysis }) => {
       console.log('Uploading file:', file.name, 'to backend...');
 
       // Call the backend API
-      const response = await fetch('http://127.0.0.1:8000/api/v1/audits/', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/api/v1/audits/`, {
         method: 'POST',
         body: formData,
         headers: {
@@ -193,7 +193,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFileAnalysis }) => {
       console.log('Fetching analysis results...');
 
       // Now fetch the analysis results
-      const analysisResponse = await fetch(`http://127.0.0.1:8000/api/v1/audits/${auditId}/analysis`);
+      const analysisResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/api/v1/audits/${auditId}/analysis`);
 
       if (!analysisResponse.ok) {
         throw new Error(`Analysis failed: ${analysisResponse.status}`);
