@@ -85,8 +85,27 @@ def parse_rules(xml_content: bytes) -> List[Dict[str, Any]]:
         List of dictionaries containing rule data
     """
     try:
-        root = ET.fromstring(xml_content)
+        # Validate input
+        if not xml_content:
+            raise ValueError("XML content is empty")
+
+        if not isinstance(xml_content, bytes):
+            raise ValueError("XML content must be bytes")
+
+        # Parse XML with detailed error handling
+        try:
+            root = ET.fromstring(xml_content)
+        except ET.ParseError as e:
+            logger.error(f"XML parsing error at line {e.lineno}, column {e.offset}: {e.msg}")
+            raise ValueError(f"Malformed XML: {e.msg} at line {e.lineno}")
+
         rules = []
+
+        # Validate XML structure - check for required elements
+        devices = root.findall(".//devices")
+        if not devices:
+            logger.warning("No devices section found in XML")
+            return rules  # Return empty list for configs without devices section
 
         # Find security rules - need to traverse the tree manually since ElementTree doesn't support XPath
         for devices in root.findall(".//devices"):
@@ -142,9 +161,17 @@ def parse_rules(xml_content: bytes) -> List[Dict[str, Any]]:
         logger.info(f"Parsed {len(rules)} security rules")
         return rules
 
+    except ET.ParseError as e:
+        error_msg = f"Malformed XML in rules parsing: {e.msg} at line {e.lineno}, column {e.offset}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    except ValueError:
+        # Re-raise ValueError with original message
+        raise
     except Exception as e:
-        logger.error(f"Error parsing rules: {str(e)}")
-        raise ValueError(f"Failed to parse rules: {str(e)}")
+        error_msg = f"Unexpected error parsing rules: {str(e)}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
 
 def parse_objects(xml_content: bytes) -> List[Dict[str, Any]]:
     """
@@ -157,8 +184,27 @@ def parse_objects(xml_content: bytes) -> List[Dict[str, Any]]:
         List of dictionaries containing object data
     """
     try:
-        root = ET.fromstring(xml_content)
+        # Validate input
+        if not xml_content:
+            raise ValueError("XML content is empty")
+
+        if not isinstance(xml_content, bytes):
+            raise ValueError("XML content must be bytes")
+
+        # Parse XML with detailed error handling
+        try:
+            root = ET.fromstring(xml_content)
+        except ET.ParseError as e:
+            logger.error(f"XML parsing error in objects at line {e.lineno}, column {e.offset}: {e.msg}")
+            raise ValueError(f"Malformed XML: {e.msg} at line {e.lineno}")
+
         objects = []
+
+        # Validate XML structure
+        devices = root.findall(".//devices")
+        if not devices:
+            logger.warning("No devices section found in XML for objects")
+            return objects
 
         # Parse address objects - traverse manually
         for devices in root.findall(".//devices"):
@@ -219,9 +265,17 @@ def parse_objects(xml_content: bytes) -> List[Dict[str, Any]]:
         logger.info(f"Parsed {len(objects)} objects")
         return objects
 
+    except ET.ParseError as e:
+        error_msg = f"Malformed XML in objects parsing: {e.msg} at line {e.lineno}, column {e.offset}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    except ValueError:
+        # Re-raise ValueError with original message
+        raise
     except Exception as e:
-        logger.error(f"Error parsing objects: {str(e)}")
-        raise ValueError(f"Failed to parse objects: {str(e)}")
+        error_msg = f"Unexpected error parsing objects: {str(e)}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
 
 def parse_metadata(xml_content: bytes) -> Dict[str, Any]:
     """
@@ -234,7 +288,20 @@ def parse_metadata(xml_content: bytes) -> Dict[str, Any]:
         Dictionary containing metadata
     """
     try:
-        root = ET.fromstring(xml_content)
+        # Validate input
+        if not xml_content:
+            raise ValueError("XML content is empty")
+
+        if not isinstance(xml_content, bytes):
+            raise ValueError("XML content must be bytes")
+
+        # Parse XML with detailed error handling
+        try:
+            root = ET.fromstring(xml_content)
+        except ET.ParseError as e:
+            logger.error(f"XML parsing error in metadata at line {e.lineno}, column {e.offset}: {e.msg}")
+            raise ValueError(f"Malformed XML: {e.msg} at line {e.lineno}")
+
         metadata = {}
 
         # Extract firmware version - traverse manually
@@ -280,9 +347,17 @@ def parse_metadata(xml_content: bytes) -> Dict[str, Any]:
         logger.info("Metadata extraction successful")
         return metadata
 
+    except ET.ParseError as e:
+        error_msg = f"Malformed XML in metadata parsing: {e.msg} at line {e.lineno}, column {e.offset}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    except ValueError:
+        # Re-raise ValueError with original message
+        raise
     except Exception as e:
-        logger.error(f"Error parsing metadata: {str(e)}")
-        return {}
+        error_msg = f"Unexpected error parsing metadata: {str(e)}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
 
 def parse_set_config(set_content: str) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
     """
@@ -922,6 +997,13 @@ def parse_rules_streaming(xml_content: bytes) -> List[Dict[str, Any]]:
     start_memory = get_memory_usage()
 
     try:
+        # Validate input
+        if not xml_content:
+            raise ValueError("XML content is empty for streaming parser")
+
+        if not isinstance(xml_content, bytes):
+            raise ValueError("XML content must be bytes for streaming parser")
+
         import io
 
         rules = []
@@ -1017,9 +1099,13 @@ def parse_rules_streaming(xml_content: bytes) -> List[Dict[str, Any]]:
         logger.info(f"Streaming parser completed: {len(rules)} security rules parsed")
         return rules
 
+    except ValueError:
+        # Re-raise ValueError with original message
+        raise
     except Exception as e:
-        logger.error(f"Error in streaming rules parser: {str(e)}")
-        raise ValueError(f"Failed to parse rules with streaming parser: {str(e)}")
+        error_msg = f"Unexpected error in streaming rules parser: {str(e)}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
 
 def _extract_rule_data_streaming(rule_elem, rule_data: Dict[str, Any]) -> Dict[str, Any]:
     """

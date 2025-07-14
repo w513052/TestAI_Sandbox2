@@ -41,9 +41,14 @@ async def create_audit_session(
         JSON response with audit session details
     """
     try:
-        # Log file upload event
-        logger.info(f"File upload started: {file.filename}, session_name: {session_name}")
-        
+        # Log comprehensive file upload event
+        upload_start_time = datetime.utcnow()
+        logger.info(f"=== FILE UPLOAD STARTED ===")
+        logger.info(f"Filename: {file.filename}")
+        logger.info(f"Content-Type: {file.content_type}")
+        logger.info(f"Session Name: {session_name or 'Auto-generated'}")
+        logger.info(f"Upload Time: {upload_start_time.isoformat()}")
+
         # Validate file content type
         if file.content_type not in ["application/xml", "text/xml", "text/plain"]:
             logger.error(f"Invalid file type: {file.content_type}")
@@ -67,9 +72,13 @@ async def create_audit_session(
                 }
             )
         
-        # Compute file hash
+        # Compute file hash and log details
         file_hash = compute_file_hash(file_content)
-        logger.info(f"File hash computed: {file_hash}")
+        file_size_kb = len(file_content) / 1024
+        logger.info(f"File processed successfully:")
+        logger.info(f"  - File size: {file_size_kb:.2f} KB")
+        logger.info(f"  - File hash (SHA256): {file_hash}")
+        logger.info(f"  - Content type: {file.content_type}")
         
         # Validate XML structure (if XML file)
         if file.content_type in ["application/xml", "text/xml"]:
@@ -85,22 +94,43 @@ async def create_audit_session(
                     }
                 )
         
-        # Parse configuration file
+        # Parse configuration file with comprehensive logging
+        parsing_start_time = datetime.utcnow()
+        logger.info(f"=== PARSING STARTED ===")
+        logger.info(f"Parsing start time: {parsing_start_time.isoformat()}")
+
         try:
             if file.content_type in ["application/xml", "text/xml"]:
                 # Parse XML format with adaptive streaming for large files
-                logger.info(f"Parsing XML configuration ({len(file_content) / 1024:.1f}KB)")
+                logger.info(f"Parsing XML configuration file:")
+                logger.info(f"  - File size: {len(file_content) / 1024:.1f} KB")
+                logger.info(f"  - Format: XML")
+                logger.info(f"  - Parser: Adaptive (streaming for large files)")
+
                 rules_data = parse_rules_adaptive(file_content)
+                logger.info(f"Rules parsing completed: {len(rules_data)} rules extracted")
+
                 objects_data = parse_objects_adaptive(file_content)
+                logger.info(f"Objects parsing completed: {len(objects_data)} objects extracted")
+
                 config_metadata = parse_metadata(file_content)
+                logger.info(f"Metadata extraction completed")
+
             else:
                 # Parse set format configuration
-                logger.info(f"Processing set format file: {file.content_type}")
+                logger.info(f"Parsing SET format configuration file:")
+                logger.info(f"  - File size: {len(file_content) / 1024:.1f} KB")
+                logger.info(f"  - Format: SET commands")
+                logger.info(f"  - Content type: {file.content_type}")
+
                 try:
                     set_content = file_content.decode('utf-8')
-                    logger.info(f"Decoded set content, length: {len(set_content)} characters")
+                    logger.info(f"File decoded successfully: {len(set_content)} characters")
+
                     rules_data, objects_data, config_metadata = parse_set_config(set_content)
-                    logger.info(f"Set format parsing completed: {len(rules_data)} rules, {len(objects_data)} objects")
+                    logger.info(f"SET format parsing completed:")
+                    logger.info(f"  - Rules extracted: {len(rules_data)}")
+                    logger.info(f"  - Objects extracted: {len(objects_data)}")
                 except UnicodeDecodeError:
                     logger.error("Failed to decode set format file as UTF-8")
                     raise HTTPException(
@@ -110,18 +140,51 @@ async def create_audit_session(
                             "message": "Set format file must be UTF-8 encoded"
                         }
                     )
-                
+
+            # Log parsing completion with comprehensive statistics
+            parsing_end_time = datetime.utcnow()
+            parsing_duration = (parsing_end_time - parsing_start_time).total_seconds()
+
+            logger.info(f"=== PARSING COMPLETED SUCCESSFULLY ===")
+            logger.info(f"Parsing completion time: {parsing_end_time.isoformat()}")
+            logger.info(f"Total parsing duration: {parsing_duration:.2f} seconds")
+            logger.info(f"Parsing results summary:")
+            logger.info(f"  - Total rules parsed: {len(rules_data)}")
+            logger.info(f"  - Total objects parsed: {len(objects_data)}")
+            logger.info(f"  - Metadata fields: {len(config_metadata)}")
+            logger.info(f"  - File format: {'XML' if file.content_type in ['application/xml', 'text/xml'] else 'SET'}")
+            logger.info(f"  - Processing rate: {(len(rules_data) + len(objects_data))/parsing_duration:.1f} items/second")
+
         except ValueError as e:
-            logger.error(f"Parsing failed: {str(e)}")
+            error_message = str(e)
+            logger.error(f"Parsing failed: {error_message}")
+
+            # Determine specific error code based on error message
+            if "Malformed XML" in error_message:
+                error_code = "INVALID_CONFIG_FILE"
+            elif "empty" in error_message.lower():
+                error_code = "EMPTY_CONFIG_FILE"
+            elif "must be bytes" in error_message:
+                error_code = "INVALID_FILE_FORMAT"
+            elif "No devices section" in error_message:
+                error_code = "MISSING_REQUIRED_SECTION"
+            else:
+                error_code = "PARSING_ERROR"
+
             raise HTTPException(
                 status_code=400,
                 detail={
-                    "error_code": "PARSING_ERROR",
-                    "message": str(e)
+                    "error_code": error_code,
+                    "message": error_message,
+                    "file_name": file.filename
                 }
             )
         
         # Create audit session with enhanced validation and error handling
+        db_start_time = datetime.utcnow()
+        logger.info(f"=== DATABASE OPERATIONS STARTED ===")
+        logger.info(f"Database operation start time: {db_start_time.isoformat()}")
+
         try:
             # Validate session name length
             final_session_name = session_name or f"Audit_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
@@ -136,6 +199,12 @@ async def create_audit_session(
             else:
                 safe_filename = file.filename
 
+            logger.info(f"Creating audit session record:")
+            logger.info(f"  - Session name: {final_session_name}")
+            logger.info(f"  - Filename: {safe_filename}")
+            logger.info(f"  - File hash: {file_hash}")
+            logger.info(f"  - Metadata fields: {len(config_metadata) if config_metadata else 0}")
+
             # Create audit session record
             audit_session = AuditSession(
                 session_name=final_session_name,
@@ -146,12 +215,17 @@ async def create_audit_session(
             )
 
             # Store audit session in database with transaction management
+            logger.info(f"Storing audit session in database...")
             db.add(audit_session)
             db.commit()
             db.refresh(audit_session)
 
             audit_id = audit_session.id
-            logger.info(f"Audit session created successfully with ID: {audit_id}, Name: '{final_session_name}', File: '{safe_filename}'")
+            logger.info(f"✅ Audit session created successfully:")
+            logger.info(f"  - Audit ID: {audit_id}")
+            logger.info(f"  - Session name: {final_session_name}")
+            logger.info(f"  - Filename: {safe_filename}")
+            logger.info(f"  - Start time: {audit_session.start_time.isoformat()}")
 
         except Exception as e:
             db.rollback()
@@ -216,25 +290,55 @@ async def create_audit_session(
             logger.warning(f"Failed to update end_time for audit session {audit_id}: {str(e)}")
             # Don't fail the operation if end_time update fails
         
-        # Prepare response
+        # Calculate timing for response and logging
+        total_end_time = datetime.utcnow()
+        total_duration = (total_end_time - upload_start_time).total_seconds()
+
+        # Prepare comprehensive API response for frontend
         response_data = {
             "status": "success",
+            "message": "Audit session created successfully",
             "data": {
                 "audit_id": audit_id,
                 "session_name": audit_session.session_name,
                 "start_time": audit_session.start_time.isoformat(),
+                "end_time": audit_session.end_time.isoformat() if audit_session.end_time else None,
                 "filename": audit_session.filename,
                 "file_hash": audit_session.file_hash,
+                "file_size": len(file_content),
+                "file_type": "XML" if file.content_type in ["application/xml", "text/xml"] else "SET",
+                "processing_duration": total_duration,
                 "metadata": {
                     **config_metadata,
                     "rules_parsed": len(rules_data),
-                    "objects_parsed": len(objects_data)
+                    "objects_parsed": len(objects_data),
+                    "rules_stored": rules_stored if 'rules_stored' in locals() else len(rules_data),
+                    "objects_stored": objects_stored if 'objects_stored' in locals() else len(objects_data),
+                    "processing_rate": f"{(len(rules_data) + len(objects_data))/total_duration:.1f} items/second" if total_duration > 0 else "N/A"
                 }
             },
-            "message": "Audit session created successfully"
+            "timestamp": total_end_time.isoformat()
         }
-        
-        logger.info(f"Audit session creation completed successfully: {audit_id}")
+
+        logger.info(f"API response prepared with {len(response_data['data']['metadata'])} metadata fields")
+
+        # Log comprehensive completion summary
+
+        logger.info(f"=== AUDIT SESSION CREATION COMPLETED SUCCESSFULLY ===")
+        logger.info(f"Completion time: {total_end_time.isoformat()}")
+        logger.info(f"Total operation duration: {total_duration:.2f} seconds")
+        logger.info(f"Final results summary:")
+        logger.info(f"  - Audit ID: {audit_id}")
+        logger.info(f"  - Session name: {audit_session.session_name}")
+        logger.info(f"  - Filename: {audit_session.filename}")
+        logger.info(f"  - File hash: {audit_session.file_hash}")
+        logger.info(f"  - File size: {len(file_content) / 1024:.2f} KB")
+        logger.info(f"  - Rules stored: {rules_stored if 'rules_stored' in locals() else len(rules_data)}")
+        logger.info(f"  - Objects stored: {objects_stored if 'objects_stored' in locals() else len(objects_data)}")
+        logger.info(f"  - Metadata fields: {len(config_metadata)}")
+        logger.info(f"  - Processing efficiency: {(len(rules_data) + len(objects_data))/total_duration:.1f} items/second")
+        logger.info(f"=== END AUDIT SESSION CREATION ===")
+
         return response_data
         
     except HTTPException:
